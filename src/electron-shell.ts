@@ -215,7 +215,9 @@ export async function runElectronShell(
     backgroundColor: '#111827',
     webPreferences: {
       preload: PRELOAD_PATH,
-      additionalArguments: platform === 'darwin' ? [] : ['--dsh-desktop-right-controls'],
+      additionalArguments: platform === 'darwin'
+        ? ['--dsh-desktop-left-controls']
+        : ['--dsh-desktop-right-controls'],
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,

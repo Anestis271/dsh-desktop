@@ -38,7 +38,7 @@ desktop:
 
 Shortcut files are written only at user level and carry an ownership marker. Disabling a setting removes only entries created by this plugin. Launch targets invoke the active dsh CLI with `--profile desktop`.
 
-On Windows and Linux, the title-bar overlay keeps native window controls on the right and places an icon-only sidebar toggle at the left edge. The toggle activates the existing official WebUI button. Its overlay color follows the WebUI `theme-color` metadata. macOS keeps the native left-side traffic lights and does not add a duplicate toggle.
+The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region around them. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
 
 ## Development
 
