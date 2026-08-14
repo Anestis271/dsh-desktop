@@ -39,6 +39,7 @@ export interface MenuLike {}
 export interface ElectronApi {
   app: {
     setName(name: string): void
+    setAppUserModelId(id: string): void
     setPath(name: string, path: string): void
     requestSingleInstanceLock(data: { profileDir: string }): boolean
     whenReady(): Promise<void>
@@ -48,7 +49,7 @@ export interface ElectronApi {
   BrowserWindow: new (options: Record<string, unknown>) => BrowserWindowLike
   Tray: new (image: unknown) => TrayLike
   Menu: { buildFromTemplate(template: readonly MenuItem[]): MenuLike }
-  nativeImage: { createFromDataURL(data: string): unknown }
+  nativeImage: { createFromPath(path: string): unknown }
   shell: { openPath(path: string): Promise<string> }
 }
 
@@ -76,13 +77,14 @@ export interface StreamLike {
   write?(chunk: string): unknown
 }
 
-const TRAY_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">'
-  + '<rect width="32" height="32" rx="7" fill="#111827"/><path d="M7 20c4-7 14-10 18-3-3 0-5 2-7 5-3 3-8 2-11-2Z" fill="#fff"/>'
-  + '</svg>',
-)
-
 const PRELOAD_PATH = fileURLToPath(new URL('./electron-preload.cjs', import.meta.url))
+const ICON_PNG_PATH = fileURLToPath(new URL('../assets/dsh-desktop.png', import.meta.url))
+const ICON_ICO_PATH = fileURLToPath(new URL('../assets/dsh-desktop.ico', import.meta.url))
+
+/** Select the native multi-resolution format where Windows shell surfaces need it. */
+export function desktopIconPath(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? ICON_ICO_PATH : ICON_PNG_PATH
+}
 
 /** Accept only colors emitted by the official theme metadata presenter. */
 export function isThemeColor(value: unknown): value is string {
@@ -171,6 +173,7 @@ export async function runElectronShell(
 ): Promise<void> {
   const init = await waitForInit(bridge)
   api.app.setName(init.config.title)
+  if (platform === 'win32') api.app.setAppUserModelId('com.anestis.dsh-desktop')
   api.app.setPath('userData', join(init.profileDir, 'desktop-shell'))
   if (!api.app.requestSingleInstanceLock({ profileDir: init.profileDir })) {
     bridge.send({ type: 'duplicate' })
@@ -203,7 +206,7 @@ export async function runElectronShell(
   api.app.on('second-instance', () => { showWindow() })
   await api.app.whenReady()
 
-  const icon = api.nativeImage.createFromDataURL(TRAY_ICON)
+  const icon = api.nativeImage.createFromPath(desktopIconPath(platform))
   window = new api.BrowserWindow({
     ...windowOptions(platform),
     title: init.config.title,
@@ -213,6 +216,7 @@ export async function runElectronShell(
     minWidth: 800,
     minHeight: 600,
     backgroundColor: '#111827',
+    icon,
     webPreferences: {
       preload: PRELOAD_PATH,
       additionalArguments: platform === 'darwin'
@@ -256,5 +260,3 @@ export async function runElectronShell(
     if (!quitting) throw error
   }
 }
-
-export { TRAY_ICON }

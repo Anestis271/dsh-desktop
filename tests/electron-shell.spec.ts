@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProcessBridge, createStreamBridge, isThemeColor, runElectronShell, titleBarSymbolColor, TRAY_ICON, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
+import { createProcessBridge, createStreamBridge, desktopIconPath, isThemeColor, runElectronShell, titleBarSymbolColor, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
 
 class FakeBridge implements ProcessBridge {
   private readonly listeners = new Set<(message: unknown) => void>()
@@ -24,9 +24,11 @@ class FakeApp {
   readonly paths: string[] = []
   lock = true
   quitCount = 0
+  appUserModelId = ''
   ready = Promise.resolve()
 
   setName(_name: string): void {}
+  setAppUserModelId(id: string): void { this.appUserModelId = id }
   setPath(name: string, path: string): void { this.paths.push(`${name}:${path}`) }
   requestSingleInstanceLock(_data: { profileDir: string }): boolean { return this.lock }
   whenReady(): Promise<void> { return this.ready }
@@ -103,7 +105,7 @@ function setup(lock = true, loading: Promise<void> = Promise.resolve()): {
     Menu: {
       buildFromTemplate(template) { state.menu = { items: [...template] }; return state.menu }
     },
-    nativeImage: { createFromDataURL: vi.fn(() => ({ icon: true })) },
+    nativeImage: { createFromPath: vi.fn(() => ({ icon: true })) },
     shell: { openPath: vi.fn(async () => '') },
   }
   return { api, app, bridge, windows, trays, get menu() { return state.menu } }
@@ -135,7 +137,8 @@ describe('Electron shell', () => {
     expect(window.visible).toBe(true)
     expect(tray.tooltip).toBe(init.config.title)
     expect(setupResult.bridge.sent).toEqual([{ type: 'ready' }])
-    expect(TRAY_ICON).toContain('data:image/svg+xml')
+    expect(setupResult.app.appUserModelId).toBe('com.anestis.dsh-desktop')
+    expect(setupResult.api.nativeImage.createFromPath).toHaveBeenCalledWith(expect.stringMatching(/dsh-desktop\.ico$/))
     window.webContents.emit('dsh-desktop-theme', '#ffffff')
     window.webContents.emit('dsh-desktop-theme', 'url(javascript:bad)')
     expect(window.overlay).toEqual([{ color: '#ffffff', symbolColor: '#111827', height: 36 }])
@@ -194,6 +197,8 @@ describe('Electron shell', () => {
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#111827', symbolColor: '#ffffff', height: 36 },
     })
+    expect(desktopIconPath('win32')).toMatch(/dsh-desktop\.ico$/)
+    expect(desktopIconPath('linux')).toMatch(/dsh-desktop\.png$/)
   })
 
   it('keeps macOS native controls and ignores overlay theme messages', async () => {
@@ -201,6 +206,7 @@ describe('Electron shell', () => {
     const pending = runElectronShell(setupResult.api, setupResult.bridge, 'darwin')
     setupResult.bridge.emit(init)
     await pending
+    expect(setupResult.app.appUserModelId).toBe('')
     setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
     expect(setupResult.windows[0].overlay).toEqual([])
   })
