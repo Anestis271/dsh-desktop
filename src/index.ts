@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
 import { reconcileShortcuts, type LaunchCommand } from './shortcuts.js'
+import type { DesktopLocale } from './protocol.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -22,6 +23,14 @@ declare module '@deepseek-ai/cordis' {
 
 /** Settings namespace owned by the desktop shell. */
 export const DESKTOP_SETTINGS_NAMESPACE = settingsNamespace('desktop')
+const LOCALE_SETTINGS_NAMESPACE = settingsNamespace('locale')
+
+/** Resolve dsh's supported locale preference for native shell strings. */
+export function desktopLocale(value: unknown): DesktopLocale {
+  return typeof value === 'object' && value !== null && 'preference' in value && value.preference === 'en'
+    ? 'en'
+    : 'zh'
+}
 
 /** User-controlled shortcut targets; every target is opt-in. */
 export interface ShortcutSettings {
@@ -76,11 +85,20 @@ export class DesktopController extends Service {
   private source: () => ResolvedConfig
   private session: DesktopSession | undefined
   private shortcutSync: Promise<void> = Promise.resolve()
+  private locale: DesktopLocale
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'desktop')
     const entry = config as ResolvedConfig
     this.source = () => entry
+    this.locale = desktopLocale(ctx.get('settings')?.get(LOCALE_SETTINGS_NAMESPACE))
+    ctx.on('settings/updated', (ns, next) => {
+      if (ns !== LOCALE_SETTINGS_NAMESPACE) return
+      const locale = desktopLocale(next)
+      if (locale === this.locale) return
+      this.locale = locale
+      this.session?.updateLocale(locale)
+    })
     installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
       setSource: current => { this.source = current as () => ResolvedConfig },
       onChange: () => { this.queueShortcutSync() },
@@ -91,10 +109,12 @@ export class DesktopController extends Service {
       const options: DesktopLaunchOptions = {
         url: `http://127.0.0.1:${String(ctx.webServer.port)}`,
         profileDir: dshHomePath('profiles', 'desktop'),
+        locale: this.locale,
         config: current,
       }
       const session = await internals.launch(options)
       this.session = session
+      session.updateLocale(this.locale)
       if (session.duplicate) ctx.get('appExit')?.(0)
       return async () => {
         this.session = undefined

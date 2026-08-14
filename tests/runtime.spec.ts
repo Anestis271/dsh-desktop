@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { connect } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
+import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
 import { ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
@@ -44,6 +44,7 @@ const config = {
 const options: DesktopLaunchOptions = {
   url: 'http://127.0.0.1:3080',
   profileDir: 'C:/profile',
+  locale: 'en',
   config,
 }
 
@@ -63,6 +64,7 @@ describe('runtime protocol guards', () => {
   it('accepts complete init and shutdown messages', () => {
     expect(isRuntimeInitMessage({ type: 'init', ...options })).toBe(true)
     expect(isRuntimeShutdownMessage({ type: 'shutdown' })).toBe(true)
+    expect(isRuntimeLocaleMessage({ type: 'locale', locale: 'zh' })).toBe(true)
     expect(isRuntimeChildMessage({ type: 'ready' })).toBe(true)
     expect(isRuntimeChildMessage({ type: 'duplicate' })).toBe(true)
     expect(isRuntimeChildMessage({ type: 'error', message: 'failed' })).toBe(true)
@@ -74,6 +76,7 @@ describe('runtime protocol guards', () => {
     expect(isRuntimeInitMessage({ type: 'init', ...options, config: { ...config, shortcuts: {} } })).toBe(false)
     expect(isRuntimeShutdownMessage({ type: 'shutdown', extra: true })).toBe(true)
     expect(isRuntimeShutdownMessage({ type: 'stop' })).toBe(false)
+    expect(isRuntimeLocaleMessage({ type: 'locale', locale: 'fr' })).toBe(false)
     expect(isRuntimeChildMessage({ type: 'error', message: 1 })).toBe(false)
     expect(isRuntimeChildMessage({ type: 'unknown' })).toBe(false)
     expect(isRuntimeChildMessage(null)).toBe(false)
@@ -98,6 +101,8 @@ describe('runtime launcher', () => {
     const session = await pending
     expect(session.duplicate).toBe(false)
     expect(child.sent[0]).toEqual({ type: 'init', ...options })
+    session.updateLocale('zh')
+    expect(child.sent.at(-1)).toEqual({ type: 'locale', locale: 'zh' })
     await session.stop()
     expect(child.sent.at(-1)).toEqual({ type: 'shutdown' })
     expect(child.killed).toBe(false)
@@ -110,8 +115,9 @@ describe('runtime launcher', () => {
     child.stdout.emit('data', '\nElectron console output\nnot-json\n{"type":"ignored"}\n{"type":"ready"}\n')
     const session = await pending
     expect(child.sent).toEqual([])
+    session.updateLocale('zh')
     await session.stop()
-    expect(child.streamWrites).toEqual(['{"type":"shutdown"}\n'])
+    expect(child.streamWrites).toEqual(['{"type":"locale","locale":"zh"}\n', '{"type":"shutdown"}\n'])
   })
 
   it('uses the authenticated control channel when available', async () => {
@@ -144,7 +150,9 @@ describe('runtime launcher', () => {
     expect(child.sent).toEqual([])
     expect(JSON.parse(spawnOptions?.env?.DSH_DESKTOP_INIT ?? '{}')).toEqual({ type: 'init', ...options })
     expect(spawnOptions?.env?.DSH_DESKTOP_CONTROL).toBe(control.descriptor)
+    session.updateLocale('zh')
     await session.stop()
+    expect(send).toHaveBeenCalledWith({ type: 'locale', locale: 'zh' })
     expect(send).toHaveBeenCalledWith({ type: 'shutdown' })
     expect(close).toHaveBeenCalled()
   })

@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
-import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, internals } from '../src/index.js'
+import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, desktopLocale, internals } from '../src/index.js'
 
 class MemorySettings extends SettingsProvider {
   private document: Record<string, unknown> = {}
@@ -29,7 +29,7 @@ describe('DesktopController', () => {
   const originalReconcile = internals.reconcileShortcuts
 
   beforeEach(() => {
-    internals.launch = vi.fn(async () => ({ duplicate: false, stop: async () => {} }))
+    internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale: vi.fn(), stop: async () => {} }))
     internals.reconcileShortcuts = vi.fn(async () => {})
   })
 
@@ -90,7 +90,7 @@ describe('DesktopController', () => {
     provideWebServer(ctx)
     const exit = vi.fn()
     ctx.provide('appExit', exit)
-    internals.launch = vi.fn(async () => ({ duplicate: true, stop: async () => {} }))
+    internals.launch = vi.fn(async () => ({ duplicate: true, updateLocale: vi.fn(), stop: async () => {} }))
     await ctx.plugin(DesktopController, {})
     expect(exit).toHaveBeenCalledWith(0)
     await ctx.fiber.dispose()
@@ -114,9 +114,29 @@ describe('DesktopController', () => {
     ) })
     await ctx.fiber.dispose()
   })
+
+  it('forwards live dsh locale changes to the native shell', async () => {
+    const ctx = new Context()
+    provideWebServer(ctx)
+    const updateLocale = vi.fn()
+    internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale, stop: async () => {} }))
+    await ctx.plugin(DesktopController, {})
+    expect(updateLocale).toHaveBeenCalledWith('zh')
+    ctx.emit('settings/updated', settingsNamespace('other'), {}, {}, 'write')
+    ctx.emit('settings/updated', settingsNamespace('locale'), { preference: 'zh' }, {}, 'write')
+    ctx.emit('settings/updated', settingsNamespace('locale'), { preference: 'en' }, {}, 'write')
+    expect(updateLocale).toHaveBeenLastCalledWith('en')
+    await ctx.fiber.dispose()
+  })
 })
 
 describe('desktopLaunchCommand', () => {
+  it('maps dsh locale settings to the supported native languages', () => {
+    expect(desktopLocale({ preference: 'en' })).toBe('en')
+    expect(desktopLocale({ preference: 'zh' })).toBe('zh')
+    expect(desktopLocale(null)).toBe('zh')
+  })
+
   it('targets the current dsh entry with the desktop profile', () => {
     expect(desktopLaunchCommand()).toEqual({
       executable: process.execPath,

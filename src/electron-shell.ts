@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { RuntimeChildMessage, RuntimeParentMessage, RuntimeInitMessage } from './protocol.js'
-import { isRuntimeInitMessage, isRuntimeShutdownMessage } from './protocol.js'
+import type { DesktopLocale, RuntimeChildMessage, RuntimeParentMessage, RuntimeInitMessage } from './protocol.js'
+import { isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from './protocol.js'
 
 /** Minimal event object used by BrowserWindow close handlers. */
 export interface CloseEventLike {
@@ -57,6 +57,20 @@ export interface ElectronApi {
 export interface MenuItem {
   label: string
   click?: () => void
+}
+
+export interface TrayLabels {
+  toggle: string
+  reload: string
+  profile: string
+  quit: string
+}
+
+/** Native Tray strings follow dsh's durable locale preference. */
+export function trayLabels(locale: DesktopLocale): TrayLabels {
+  return locale === 'zh'
+    ? { toggle: '显示 / 隐藏', reload: '重新加载 WebUI', profile: '打开配置文件夹', quit: '退出' }
+    : { toggle: 'Show / Hide', reload: 'Reload WebUI', profile: 'Open profile directory', quit: 'Quit' }
 }
 
 /** IPC bridge between the Electron child and its dsh parent. */
@@ -182,6 +196,7 @@ export async function runElectronShell(
   }
 
   let quitting = false
+  let locale = init.locale
   let window: BrowserWindowLike | undefined
   let tray: TrayLike | undefined
   const showWindow = (): void => {
@@ -192,7 +207,22 @@ export async function runElectronShell(
     if (window?.isVisible()) window.hide()
     else showWindow()
   }
+  const installTrayMenu = (): void => {
+    if (tray === undefined) return
+    const labels = trayLabels(locale)
+    tray.setContextMenu(api.Menu.buildFromTemplate([
+      { label: labels.toggle, click: toggleWindow },
+      { label: labels.reload, click: () => { window?.reload() } },
+      { label: labels.profile, click: () => { void api.shell.openPath(init.profileDir) } },
+      { label: labels.quit, click: () => { quitting = true; api.app.quit() } },
+    ]))
+  }
   const disposeBridge = bridge.onMessage(message => {
+    if (isRuntimeLocaleMessage(message)) {
+      locale = message.locale
+      installTrayMenu()
+      return
+    }
     if (!isRuntimeShutdownMessage(message)) return
     quitting = true
     api.app.quit()
@@ -242,12 +272,7 @@ export async function runElectronShell(
 
   tray = new api.Tray(icon)
   tray.setToolTip(init.config.title)
-  tray.setContextMenu(api.Menu.buildFromTemplate([
-    { label: 'Show / Hide', click: toggleWindow },
-    { label: 'Reload WebUI', click: () => { window?.reload() } },
-    { label: 'Open profile directory', click: () => { void api.shell.openPath(init.profileDir) } },
-    { label: 'Quit', click: () => { quitting = true; api.app.quit() } },
-  ]))
+  installTrayMenu()
   tray.on('click', toggleWindow)
   tray.on('double-click', showWindow)
 

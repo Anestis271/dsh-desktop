@@ -115,6 +115,7 @@ const init = {
   type: 'init' as const,
   url: 'http://127.0.0.1:3000',
   profileDir: 'C:/profile',
+  locale: 'en' as const,
   config: {
     closeToTray: true,
     startHidden: false,
@@ -129,6 +130,7 @@ describe('Electron shell', () => {
     const pending = runElectronShell(setupResult.api, setupResult.bridge)
     setupResult.bridge.emit({ type: 'ignored' })
     setupResult.bridge.emit(init)
+    setupResult.bridge.emit({ type: 'locale', locale: 'en' })
     await pending
 
     const window = setupResult.windows[0]
@@ -159,6 +161,10 @@ describe('Electron shell', () => {
     expect(window.calls).toContain('reload')
     items.find(item => item.label === 'Open profile directory')!.click!()
     items.find(item => item.label === 'Quit')!.click!()
+    setupResult.bridge.emit({ type: 'locale', locale: 'zh' })
+    expect(setupResult.menu!.items.map(item => item.label)).toEqual([
+      '显示 / 隐藏', '重新加载 WebUI', '打开配置文件夹', '退出',
+    ])
     expect(setupResult.app.quitCount).toBe(1)
     setupResult.app.emit('before-quit')
     expect(tray.destroyed).toBe(true)
@@ -209,6 +215,19 @@ describe('Electron shell', () => {
     expect(setupResult.app.appUserModelId).toBe('')
     setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
     expect(setupResult.windows[0].overlay).toEqual([])
+  })
+
+  it('retains locale updates received before the Tray is ready', async () => {
+    const setupResult = setup()
+    let resolveReady: () => void = () => {}
+    setupResult.app.ready = new Promise<void>(resolve => { resolveReady = resolve })
+    const pending = runElectronShell(setupResult.api, setupResult.bridge)
+    setupResult.bridge.emit(init)
+    await Promise.resolve()
+    setupResult.bridge.emit({ type: 'locale', locale: 'zh' })
+    resolveReady()
+    await pending
+    expect(setupResult.menu!.items[0].label).toBe('显示 / 隐藏')
   })
 
   it('reports load failures unless shutdown already started', async () => {

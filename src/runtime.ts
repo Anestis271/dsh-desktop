@@ -4,12 +4,13 @@ import { createRequire } from 'node:module'
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { ResolvedConfig } from './index.js'
-import { isRuntimeChildMessage, type RuntimeInitMessage } from './protocol.js'
+import { isRuntimeChildMessage, type DesktopLocale, type RuntimeInitMessage, type RuntimeParentMessage } from './protocol.js'
 
 /** Values the dsh host passes to the Electron child. */
 export interface DesktopLaunchOptions {
   url: string
   profileDir: string
+  locale: DesktopLocale
   config: ResolvedConfig
 }
 
@@ -17,6 +18,8 @@ export interface DesktopLaunchOptions {
 export interface DesktopSession {
   /** Whether another Electron instance already owns this profile UI. */
   duplicate: boolean
+  /** Update native menu strings without restarting Electron. */
+  updateLocale(locale: DesktopLocale): void
   /** Ask the child to quit and bound its shutdown. */
   stop(): Promise<void>
 }
@@ -138,6 +141,11 @@ export async function launchDesktop(
     },
   })
   const streamChild = child as typeof child & StreamChild
+  const sendToChild = (message: RuntimeParentMessage): void => {
+    if (control !== undefined) control.send(message)
+    else if (streamChild.stdin !== undefined) streamChild.stdin.write(`${JSON.stringify(message)}\n`)
+    else child.send(message)
+  }
 
   let exited = false
   const exitPromise = new Promise<void>((resolve) => {
@@ -187,11 +195,10 @@ export async function launchDesktop(
 
   return {
     duplicate: startup === 'duplicate',
+    updateLocale(locale): void { sendToChild({ type: 'locale', locale }) },
     async stop(): Promise<void> {
       if (exited) return
-      if (control !== undefined) control.send({ type: 'shutdown' })
-      else if (streamChild.stdin !== undefined) streamChild.stdin.write('{"type":"shutdown"}\n')
-      else child.send({ type: 'shutdown' })
+      sendToChild({ type: 'shutdown' })
       await Promise.race([exitPromise, delay(dependencies.stopTimeoutMs)])
       if (!exited) child.kill()
       await control?.close()

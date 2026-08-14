@@ -19,7 +19,7 @@ dsh plugin --profile desktop add .
 dsh --profile desktop
 ```
 
-The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and quit actions. Closing the window hides it in the tray by default. A profile-scoped single-instance lock prevents two desktop windows from sharing the same dsh profile.
+The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and quit actions. Its menu follows `locale.preference` from dsh settings (`zh` or `en`) live, without restarting the profile. Closing the window hides it in the tray by default. A profile-scoped single-instance lock prevents two desktop windows from sharing the same dsh profile.
 
 ## Settings
 

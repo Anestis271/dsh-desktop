@@ -1,10 +1,13 @@
 import type { ResolvedConfig } from './index.js'
 
+export type DesktopLocale = 'zh' | 'en'
+
 /** Parent-to-Electron startup payload sent over the private IPC channel. */
 export interface RuntimeInitMessage {
   type: 'init'
   url: string
   profileDir: string
+  locale: DesktopLocale
   config: ResolvedConfig
 }
 
@@ -13,8 +16,14 @@ export interface RuntimeShutdownMessage {
   type: 'shutdown'
 }
 
+/** Live dsh locale update for native desktop surfaces. */
+export interface RuntimeLocaleMessage {
+  type: 'locale'
+  locale: DesktopLocale
+}
+
 /** Messages accepted by the Electron child. */
-export type RuntimeParentMessage = RuntimeInitMessage | RuntimeShutdownMessage
+export type RuntimeParentMessage = RuntimeInitMessage | RuntimeShutdownMessage | RuntimeLocaleMessage
 
 /** Electron child readiness notification. */
 export interface RuntimeReadyMessage {
@@ -60,12 +69,18 @@ export function isRuntimeInitMessage(value: unknown): value is RuntimeInitMessag
     && value.type === 'init'
     && typeof value.url === 'string'
     && typeof value.profileDir === 'string'
+    && (value.locale === 'zh' || value.locale === 'en')
     && isResolvedConfig(value.config)
 }
 
 /** Validate an untrusted parent IPC value as a shutdown request. */
 export function isRuntimeShutdownMessage(value: unknown): value is RuntimeShutdownMessage {
   return isRecord(value) && value.type === 'shutdown'
+}
+
+/** Validate a live locale update. */
+export function isRuntimeLocaleMessage(value: unknown): value is RuntimeLocaleMessage {
+  return isRecord(value) && value.type === 'locale' && (value.locale === 'zh' || value.locale === 'en')
 }
 
 /** Validate an untrusted Electron IPC value for the dsh host. */
