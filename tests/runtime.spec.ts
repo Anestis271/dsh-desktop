@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { connect } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
-import { launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
+import { ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
   readonly sent: unknown[] = []
@@ -216,6 +216,10 @@ describe('runtime launcher', () => {
 })
 
 describe('loopback control server', () => {
+  it('contains expected socket teardown errors', () => {
+    expect(ignoreControlSocketError(new Error('ECONNRESET'))).toBeUndefined()
+  })
+
   it('authenticates a client and exchanges JSON lines', async () => {
     const server = await openControlServer()
     server.send({ type: 'ignored-before-auth' })

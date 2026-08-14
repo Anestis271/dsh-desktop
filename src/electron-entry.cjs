@@ -15,6 +15,7 @@ void import('./electron-shell.js').then(async ({ runElectronShell, createStreamB
       socket.once('connect', resolve)
       socket.once('error', reject)
     })
+    socket.on('error', () => {})
     socket.write(`${JSON.stringify({ token })}\n`)
     input = socket
     output = socket

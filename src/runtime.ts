@@ -38,6 +38,9 @@ export interface ControlServer {
   close(): Promise<void>
 }
 
+/** Socket teardown is represented by child exit/startup timeout, never an uncaught event. */
+export function ignoreControlSocketError(_error: Error): void {}
+
 interface StreamChild {
   stdin?: { write(chunk: string): unknown }
   stdout?: { on(event: 'data', listener: (chunk: unknown) => void): void }
@@ -75,6 +78,7 @@ export async function openControlServer(): Promise<ControlServer> {
   const server: Server = createServer(socket => {
     let buffer = ''
     let authenticated = false
+    socket.on('error', ignoreControlSocketError)
     socket.on('data', chunk => {
       buffer += String(chunk)
       const lines = buffer.split(/\r?\n/)
