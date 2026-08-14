@@ -1,0 +1,6 @@
+# Desktop-only row. The official Web bundle is composed into this file during
+# the runtime implementation step; no WebUI source is copied into this package.
+- insert:
+    - id: desktop
+      name: '@anestis/dsh-desktop'
+      inject: [webServer]
