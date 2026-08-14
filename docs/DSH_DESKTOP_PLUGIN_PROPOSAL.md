@@ -37,14 +37,18 @@ dsh --profile desktop
 
 采用 **Electron 轻量壳层 + dsh 官方 WebUI URL**。Electron 提供稳定的跨平台窗口、托盘、原生菜单、快捷方式和标题栏覆盖能力。插件不引入 React、Vue、路由、状态管理或第二个 HTTP 服务。
 
+这里采用“dsh 宿主 + Electron 子进程”拓扑：`dsh --profile desktop` 继续由 dsh 的 Node 启动器运行，插件在 profile 生命周期内启动一个 Electron runtime 子进程；Electron 子进程只负责桌面窗口和托盘，父子进程通过一次性启动参数和受控本地 IPC 协调生命周期。这样不会把 Electron API 错误地当作普通 Node 模块嵌入 dsh，也不会改变 dsh 的 WebUI 服务模型。
+
 进程职责：
 
-- dsh 插件入口：接收 profile 上下文，解析插件设置，启动/停止桌面壳。
-- Electron main：管理 `BrowserWindow`、`Tray`、原生菜单、窗口状态和平台集成。
+- dsh 插件入口（宿主进程）：接收 profile 上下文，解析插件设置，启动/停止 Electron 子进程，并在 dsh deactivate/退出时等待其结束。
+- Electron main（子进程）：管理 `BrowserWindow`、`Tray`、原生菜单、窗口状态和平台集成。
 - preload：仅暴露严格白名单的窗口控制、主题同步和侧边栏控制通道。
 - renderer：直接加载 dsh 提供的 WebUI，不打包 WebUI 副本，不承载业务状态。
 
 优先使用 dsh 提供的 WebUI 就绪事件。若接口只能提供状态查询，启动阶段可使用有超时和退避的一次性等待，成功或失败后立即释放计时器，禁止在运行期间持续轮询。
+
+启动时序应明确为：dsh profile 先启动官方 WebUI 服务，desktop 宿主收到包含 URL、origin 和生命周期句柄的正式就绪事件后，再启动 Electron 子进程；子进程加载 URL 并回报窗口就绪，宿主随后完成插件激活。WebUI 尚未就绪时不应猜测端口或启动第二个服务器。dsh 停止或 profile 被卸载时，宿主先通知子进程关闭，再在有限超时后终止残留进程。
 
 ## 4. npm 包与插件结构
 
@@ -66,6 +70,22 @@ dsh --profile desktop
 ```
 
 `package.json` 应包含 dsh 要求的插件声明、明确的 `engines`、兼容 dsh 版本范围和导出入口。dsh 插件 API 应作为 peer dependency；不得将 dsh 服务端或 WebUI 重复打包。构建输出使用 ESM 或 dsh 当前统一的模块制式，发布包仅包含运行必需文件。
+
+dsh 仓库内部包遵循 `@deepseek-ai/dsh-*` 命名和 workspace 约束；本项目作为树外插件，按用户指定发布为 `@anestis/dsh-desktop`，不应为了套用内部包名而修改 dsh 的 monorepo。
+
+包必须声明 dsh 可识别的 profile bundle patch，例如 `dsh.bundle.patch: "./cordis.patch.yml"`，并在发布包的 `files` 中包含该 patch。`dsh plugin --profile desktop add @anestis/dsh-desktop` 会在 profile 目录中转发为 pnpm 安装；安装成功后 dsh 根据已安装依赖重新扫描 `dsh.bundle.patch`，自动把该包加入 `dsh.profile.bundles`。插件不能依赖“命令行 add 的参数顺序”来激活，也不能要求用户手工编辑 profile manifest。
+
+该命令的前置条件是 dsh 当前版本可用的 pnpm 运行时；若 dsh 发行版不自带 pnpm，README、安装检查和验收脚本必须明确提示用户安装匹配版本。插件本身不应偷偷下载或替换 pnpm，也不应把 profile 的 `node_modules` 提升到用户全局目录。
+
+bundle patch 应只增加桌面所需的宿主插件行，并显式依赖/复用 dsh 的 web-app bundle 或等价的官方 WebUI 组合；不能在 patch 中复制 WebUI 的插件清单。普通运行依赖放在 npm `dependencies`，profile 层激活声明放在 `dsh.bundle.patch`，两者职责分离。
+
+推荐将 `@deepseek-ai/dsh-web-app` 作为该包的运行依赖而非复制其 patch。这样安装 desktop 包时，dsh 的依赖扫描会同时发现官方 Web bundle 和 desktop bundle；profile 的最终顺序应为 `dsh-base`、`dsh-web-app`、`@anestis/dsh-desktop`，并由 dsh 的 bundle 解析结果验证，而不是由插件自行重排。
+
+### Electron runtime 的分发
+
+Electron 是独立的子进程 runtime，不应由 dsh 的 Node 进程隐式加载。将版本固定在插件的运行依赖中，并让 npm/pnpm 在安装阶段完成平台 runtime 准备；启动时只解析已安装的绝对可执行文件，不在线下载、不在首次启动编译。若 Electron 的安装脚本需要 pnpm `allowBuilds` 或网络权限，应在 README 和 CI 中明确列出，安装失败时由 dsh 原样报告而不是静默退化为浏览器。
+
+实现应提供一个 runtime 适配接口，以便 dsh 将来提供共享 WebView/Electron runtime 时替换包内 runtime；当前默认实现仍需保证单次 `dsh plugin ... add` 后即可启动。Electron 的固定内存成本应在兼容矩阵中记录；“无性能损失”指不增加 WebUI 的第二次渲染、状态同步和服务端请求，不把 Electron 的基础 runtime 成本误称为零。
 
 ## 5. WebUI 加载与安全边界
 
@@ -132,13 +152,17 @@ dsh --profile desktop
 
 ```json
 {
-  "desktop.shortcuts.desktop": false,
-  "desktop.shortcuts.appMenu": false,
-  "desktop.shortcuts.login": false
+  "desktop": {
+    "shortcuts": {
+      "desktop": false,
+      "appMenu": false,
+      "login": false
+    }
+  }
 }
 ```
 
-所有选项默认 `false`。启用任何入口后，该入口唯一执行：
+`desktop` 是插件设置命名空间，`shortcuts` 是其嵌套配置对象；具体 schema 类型、设置 UI 展示和迁移规则必须由 dsh 的设置 API 注册，不能把这些字段写入 profile patch。所有选项默认 `false`。启用任何入口后，该入口唯一执行：
 
 ```bash
 dsh --profile desktop
@@ -154,6 +178,8 @@ dsh --profile desktop
 - 登录启动：仅在用户显式开启时，通过平台推荐的用户级机制调用同一 dsh 命令。
 
 设置变化触发一次性 reconcile。插件为创建的入口写入稳定标识和版本信息；关闭设置或卸载时只删除由本插件创建且标识匹配的入口，不删除用户自行创建的同名文件。失败应记录到 dsh 日志并在设置 UI 返回可操作错误，不阻止主窗口启动。
+
+快捷入口和重复启动必须共享单实例策略：同一 `desktop` profile 已有窗口时，新的 `dsh --profile desktop` 只向现有 Electron 子进程发送 focus/show 请求，然后宿主正常退出或复用已有宿主，不创建第二个托盘和第二个 WebUI 会话。单实例锁应位于 profile 作用域并使用平台原子机制，异常退出后可恢复。
 
 ## 9. 性能与可靠性
 
@@ -173,13 +199,15 @@ CI 至少覆盖 Windows、macOS、主流 Linux：
 
 1. 在干净环境执行插件安装命令。
 2. 执行 `dsh --profile desktop` 并等待 WebUI 可交互。
-3. 验证 UI 来源为 dsh 官方 WebUI，且插件包不包含其副本。
-4. 验证 Tray 显示、隐藏、恢复、重载和退出。
-5. 验证原生窗口按钮仍由平台提供且行为正确。
-6. 验证主题切换后标题栏和侧边栏颜色一致。
-7. 验证右侧原生按钮平台的侧边栏按钮位于标题栏最左侧。
-8. 验证快捷方式默认无副作用，开启后命令精确指向 `dsh --profile desktop`，关闭/卸载后安全清理。
-9. 验证多显示器恢复、renderer crash、WebUI 不可达和 dsh 退出场景。
+3. 验证安装包声明 `dsh.bundle.patch`，profile manifest 自动包含正确的 bundle 顺序，且不需要手工编辑配置。
+4. 验证 UI 来源为 dsh 官方 WebUI，且插件包不包含其副本。
+5. 验证 Tray 显示、隐藏、恢复、重载和退出。
+6. 验证原生窗口按钮仍由平台提供且行为正确。
+7. 验证主题切换后标题栏和侧边栏颜色一致。
+8. 验证右侧原生按钮平台的侧边栏按钮位于标题栏最左侧。
+9. 验证快捷方式默认无副作用，开启后命令精确指向 `dsh --profile desktop`，关闭/卸载后安全清理。
+10. 验证重复启动只产生一个窗口和 Tray。
+11. 验证多显示器恢复、renderer crash、WebUI 不可达和 dsh 退出场景。
 
 发布使用锁文件、最小 files 白名单、npm provenance、变更日志和 dsh/Electron/Node 兼容矩阵。发布前检查生产依赖许可证与安全公告。
 
