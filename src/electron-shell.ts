@@ -71,6 +71,11 @@ export interface ProcessLike {
   send?(message: RuntimeChildMessage): unknown
 }
 
+export interface StreamLike {
+  on(event: 'data', listener: (chunk: unknown) => void): void
+  write?(chunk: string): unknown
+}
+
 const TRAY_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">'
   + '<rect width="32" height="32" rx="7" fill="#111827"/><path d="M7 20c4-7 14-10 18-3-3 0-5 2-7 5-3 3-8 2-11-2Z" fill="#fff"/>'
@@ -110,6 +115,32 @@ export function createProcessBridge(source: ProcessLike = process as unknown as 
   }
 }
 
+/** JSON-lines bridge used by Electron, whose GUI process does not expose Node IPC. */
+export function createStreamBridge(initial: unknown, input: StreamLike, output: StreamLike): ProcessBridge {
+  const listeners = new Set<(message: unknown) => void>()
+  let buffer = ''
+  const emit = (message: unknown): void => { for (const listener of listeners) listener(message) }
+  input.on('data', chunk => {
+    buffer += String(chunk)
+    const lines = buffer.split(/\r?\n/)
+    buffer = lines.pop() as string
+    for (const line of lines) {
+      if (line.trim() === '') continue
+      try { emit(JSON.parse(line)) } catch { /* ignore unrelated console output */ }
+    }
+  })
+  queueMicrotask(() => { emit(initial) })
+  return {
+    onMessage(listener) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    send(message) {
+      output.write?.(`${JSON.stringify(message)}\n`)
+    },
+  }
+}
+
 function waitForInit(bridge: ProcessBridge): Promise<RuntimeInitMessage> {
   return new Promise(resolve => {
     const dispose = bridge.onMessage(message => {
@@ -124,7 +155,12 @@ export function windowOptions(platform: NodeJS.Platform = process.platform): Rec
   if (platform === 'darwin') {
     return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } }
   }
-  return { titleBarOverlay: true }
+  // Electron enables the native caption-button overlay when hidden title-bar
+  // mode and the overlay option are specified together.
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#111827', symbolColor: '#ffffff', height: 36 },
+  }
 }
 
 /** Run the Electron desktop shell after receiving the dsh host handshake. */
@@ -209,9 +245,14 @@ export async function runElectronShell(
   tray.on('click', toggleWindow)
   tray.on('double-click', showWindow)
 
-  await window.loadURL(init.url)
+  const loading = window.loadURL(init.url)
   if (!init.config.startHidden) showWindow()
   bridge.send({ type: 'ready' })
+  try {
+    await loading
+  } catch (error) {
+    if (!quitting) throw error
+  }
 }
 
 export { TRAY_ICON }

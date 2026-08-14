@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
+import { connect } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
-import { launchDesktop, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
+import { launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
   readonly sent: unknown[] = []
@@ -19,6 +20,17 @@ class FakeChild extends EventEmitter {
     this.killed = true
     if (this.emitExitOnKill) this.emit('exit', null, 'SIGTERM')
     return true
+  }
+}
+
+class StreamChild extends FakeChild {
+  readonly streamWrites: string[] = []
+  readonly stdout = new EventEmitter()
+  readonly stdin = {
+    write: (chunk: string): void => {
+      this.streamWrites.push(chunk)
+      if (chunk.includes('shutdown') && this.emitExitOnKill) this.emit('exit', 0, null)
+    },
   }
 }
 
@@ -75,7 +87,7 @@ describe('runtime launcher', () => {
     expect(() => resolveElectronPath(() => undefined)).toThrow(/did not resolve/)
     const production = productionRuntimeDependencies()
     expect(production.electronPath).toContain('electron')
-    expect(production.entryPath).toContain('electron-main.js')
+    expect(production.entryPath).toContain('electron-entry.cjs')
   })
 
   it('starts on ready and stops through the child IPC channel', async () => {
@@ -89,6 +101,52 @@ describe('runtime launcher', () => {
     await session.stop()
     expect(child.sent.at(-1)).toEqual({ type: 'shutdown' })
     expect(child.killed).toBe(false)
+  })
+
+  it('uses JSON-line streams with a real Electron-style child', async () => {
+    const child = new StreamChild()
+    const pending = launchDesktop(options, dependencies(child))
+    child.emit('spawn')
+    child.stdout.emit('data', '\nElectron console output\nnot-json\n{"type":"ignored"}\n{"type":"ready"}\n')
+    const session = await pending
+    expect(child.sent).toEqual([])
+    await session.stop()
+    expect(child.streamWrites).toEqual(['{"type":"shutdown"}\n'])
+  })
+
+  it('uses the authenticated control channel when available', async () => {
+    const child = new FakeChild()
+    const listeners = new Set<(message: unknown) => void>()
+    const close = vi.fn(async () => {})
+    const send = vi.fn((message: unknown) => {
+      if (isRuntimeShutdownMessage(message)) child.emit('exit', 0, null)
+    })
+    const control = {
+      descriptor: '{"port":1,"token":"test"}',
+      onMessage: (listener: (message: unknown) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      send,
+      close,
+    }
+    let spawnOptions: { env?: NodeJS.ProcessEnv } | undefined
+    const deps: RuntimeDependencies = {
+      ...dependencies(child),
+      openControlServer: async () => control,
+      spawnProcess: ((_executable: string, _args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
+        spawnOptions = options
+        return child
+      }) as unknown as RuntimeDependencies['spawnProcess'],
+    }
+    const pending = launchDesktop(options, deps)
+    await vi.waitFor(() => { expect(spawnOptions).toBeDefined() })
+    child.emit('spawn')
+    for (const listener of listeners) listener({ type: 'ready' })
+    const session = await pending
+    expect(child.sent).toEqual([])
+    expect(JSON.parse(spawnOptions?.env?.DSH_DESKTOP_INIT ?? '{}')).toEqual({ type: 'init', ...options })
+    expect(spawnOptions?.env?.DSH_DESKTOP_CONTROL).toBe(control.descriptor)
+    await session.stop()
+    expect(send).toHaveBeenCalledWith({ type: 'shutdown' })
+    expect(close).toHaveBeenCalled()
   })
 
   it('reports duplicate ownership without treating it as a startup failure', async () => {
@@ -154,5 +212,37 @@ describe('runtime launcher', () => {
     exitedChild.emit('exit', 0, null)
     await session.stop()
     expect(exitedChild.sent).toHaveLength(1)
+  })
+})
+
+describe('loopback control server', () => {
+  it('authenticates a client and exchanges JSON lines', async () => {
+    const server = await openControlServer()
+    server.send({ type: 'ignored-before-auth' })
+    const descriptor = JSON.parse(server.descriptor) as { port: number; token: string }
+
+    const rejected = connect(descriptor.port, '127.0.0.1')
+    await new Promise<void>(resolve => { rejected.once('connect', () => { rejected.write('not-json\n{"token":"wrong"}\n'); resolve() }) })
+    await new Promise(resolve => rejected.once('close', resolve))
+
+    const client = connect(descriptor.port, '127.0.0.1')
+    await new Promise<void>(resolve => { client.once('connect', resolve) })
+    const listener = vi.fn()
+    const dispose = server.onMessage(listener)
+    client.write(`\n{"token":"${descriptor.token}"}\n`)
+    client.write('{"type":"rea')
+    client.write('dy"}\n')
+    await vi.waitFor(() => { expect(listener).toHaveBeenCalledWith({ type: 'ready' }) })
+    dispose()
+    client.write('{"type":"duplicate"}\n')
+    const received = new Promise<string>(resolve => { client.once('data', chunk => { resolve(String(chunk)) }) })
+    server.send({ type: 'shutdown' })
+    await expect(received).resolves.toContain('shutdown')
+    await server.close()
+  })
+
+  it('closes cleanly before a client connects', async () => {
+    const server = await openControlServer()
+    await expect(server.close()).resolves.toBeUndefined()
   })
 })

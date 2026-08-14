@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
+import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { ResolvedConfig } from './index.js'
 import { isRuntimeChildMessage, type RuntimeInitMessage } from './protocol.js'
@@ -26,6 +28,19 @@ export interface RuntimeDependencies {
   spawnProcess: typeof spawn
   startupTimeoutMs: number
   stopTimeoutMs: number
+  openControlServer?: () => Promise<ControlServer>
+}
+
+export interface ControlServer {
+  descriptor: string
+  onMessage(listener: (message: unknown) => void): () => void
+  send(message: unknown): void
+  close(): Promise<void>
+}
+
+interface StreamChild {
+  stdin?: { write(chunk: string): unknown }
+  stdout?: { on(event: 'data', listener: (chunk: unknown) => void): void }
 }
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000
@@ -44,10 +59,54 @@ export function resolveElectronPath(requireModule: NodeJS.Require = createRequir
 export function productionRuntimeDependencies(): RuntimeDependencies {
   return {
     electronPath: resolveElectronPath(),
-    entryPath: fileURLToPath(new URL('./electron-main.js', import.meta.url)),
+    entryPath: fileURLToPath(new URL('./electron-entry.cjs', import.meta.url)),
     spawnProcess: spawn,
     startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
     stopTimeoutMs: DEFAULT_STOP_TIMEOUT_MS,
+    openControlServer,
+  }
+}
+
+/** Open a token-authenticated loopback channel for the Electron GUI process. */
+export async function openControlServer(): Promise<ControlServer> {
+  const token = randomUUID()
+  const listeners = new Set<(message: unknown) => void>()
+  let client: Socket | undefined
+  const server: Server = createServer(socket => {
+    let buffer = ''
+    let authenticated = false
+    socket.on('data', chunk => {
+      buffer += String(chunk)
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() as string
+      for (const line of lines) {
+        if (line.trim() === '') continue
+        let message: unknown
+        try { message = JSON.parse(line) } catch { continue }
+        if (!authenticated) {
+          if (typeof message === 'object' && message !== null && 'token' in message && message.token === token) {
+            authenticated = true
+            client = socket
+          } else socket.destroy()
+          continue
+        }
+        for (const listener of listeners) listener(message)
+      }
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address() as AddressInfo
+  return {
+    descriptor: JSON.stringify({ port: address.port, token }),
+    onMessage(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
+    send(message) { client?.write(`${JSON.stringify(message)}\n`) },
+    close: () => new Promise(resolve => {
+      client?.destroy()
+      server.close(() => { resolve() })
+    }),
   }
 }
 
@@ -60,11 +119,21 @@ export async function launchDesktop(
   options: DesktopLaunchOptions,
   dependencies: RuntimeDependencies = productionRuntimeDependencies(),
 ): Promise<DesktopSession> {
+  const control = dependencies.openControlServer === undefined
+    ? undefined
+    : await dependencies.openControlServer()
+  const init: RuntimeInitMessage = { type: 'init', ...options }
   const child = dependencies.spawnProcess(dependencies.electronPath, [dependencies.entryPath], {
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    stdio: ['pipe', 'pipe', 'inherit'],
     windowsHide: true,
-    env: { ...process.env, ELECTRON_NO_ATTACH_CONSOLE: '1' },
+    env: {
+      ...process.env,
+      ELECTRON_NO_ATTACH_CONSOLE: '1',
+      DSH_DESKTOP_INIT: JSON.stringify(init),
+      ...(control === undefined ? {} : { DSH_DESKTOP_CONTROL: control.descriptor }),
+    },
   })
+  const streamChild = child as typeof child & StreamChild
 
   let exited = false
   const exitPromise = new Promise<void>((resolve) => {
@@ -92,14 +161,23 @@ export async function launchDesktop(
     void exitPromise.then(() => {
       settle(new Error('dsh-desktop: Electron exited before becoming ready'))
     })
-    child.on('message', (message: unknown) => {
+    const handleMessage = (message: unknown): void => {
       if (!isRuntimeChildMessage(message)) return
       if (message.type === 'error') settle(new Error(`dsh-desktop: ${message.message}`))
       else settle(message.type)
+    }
+    child.on('message', handleMessage)
+    control?.onMessage(handleMessage)
+    streamChild.stdout?.on('data', chunk => {
+      for (const line of String(chunk).split(/\r?\n/)) {
+        if (line.trim() === '') continue
+        try { handleMessage(JSON.parse(line)) } catch { /* ignore console output */ }
+      }
     })
     child.once('spawn', () => {
-      const init: RuntimeInitMessage = { type: 'init', ...options }
-      child.send(init)
+      if (control === undefined && streamChild.stdin === undefined) {
+        child.send(init)
+      }
     })
   })
 
@@ -107,9 +185,12 @@ export async function launchDesktop(
     duplicate: startup === 'duplicate',
     async stop(): Promise<void> {
       if (exited) return
-      child.send({ type: 'shutdown' })
+      if (control !== undefined) control.send({ type: 'shutdown' })
+      else if (streamChild.stdin !== undefined) streamChild.stdin.write('{"type":"shutdown"}\n')
+      else child.send({ type: 'shutdown' })
       await Promise.race([exitPromise, delay(dependencies.stopTimeoutMs)])
       if (!exited) child.kill()
+      await control?.close()
     },
   }
 }

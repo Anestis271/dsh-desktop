@@ -11,6 +11,14 @@ export async function main(load: () => Promise<{ default?: ElectronApi }>, run =
 
 /* v8 ignore start -- this branch only runs inside the Electron executable. */
 if (process.versions.electron !== undefined) {
-  void main(() => import('electron') as unknown as Promise<{ default: ElectronApi }>)
+  void main(async () => {
+    const electron = await import('electron') as unknown as { default?: ElectronApi }
+    return { default: electron.default ?? electron as unknown as ElectronApi }
+  }).catch(error => {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`dsh-desktop: ${message}`)
+    process.send?.({ type: 'error', message })
+    process.exit(1)
+  })
 }
 /* v8 ignore stop */

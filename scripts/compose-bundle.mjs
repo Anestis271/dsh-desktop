@@ -36,3 +36,7 @@ await copyFile(
   fileURLToPath(new URL('../src/electron-preload.cjs', import.meta.url)),
   fileURLToPath(new URL('../lib/electron-preload.cjs', import.meta.url)),
 )
+await copyFile(
+  fileURLToPath(new URL('../src/electron-entry.cjs', import.meta.url)),
+  fileURLToPath(new URL('../lib/electron-entry.cjs', import.meta.url)),
+)

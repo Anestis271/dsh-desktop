@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProcessBridge, isThemeColor, runElectronShell, titleBarSymbolColor, TRAY_ICON, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
+import { createProcessBridge, createStreamBridge, isThemeColor, runElectronShell, titleBarSymbolColor, TRAY_ICON, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
 
 class FakeBridge implements ProcessBridge {
   private readonly listeners = new Set<(message: unknown) => void>()
@@ -41,6 +41,7 @@ class FakeWindow implements BrowserWindowLike {
   visible = false
   loaded = ''
   title = ''
+  loading: Promise<void> = Promise.resolve()
   overlay: { color: string; symbolColor: string; height: number }[] = []
   readonly webContents = {
     listeners: [] as Array<(event: unknown, channel: string, ...args: unknown[]) => void>,
@@ -52,7 +53,7 @@ class FakeWindow implements BrowserWindowLike {
     },
   }
 
-  async loadURL(url: string): Promise<void> { this.loaded = url }
+  loadURL(url: string): Promise<void> { this.loaded = url; return this.loading }
   show(): void { this.visible = true; this.calls.push('show') }
   hide(): void { this.visible = false; this.calls.push('hide') }
   focus(): void { this.calls.push('focus') }
@@ -77,7 +78,7 @@ class FakeTray implements TrayLike {
   emit(event: string): void { this.events.get(event)?.() }
 }
 
-function setup(lock = true): {
+function setup(lock = true, loading: Promise<void> = Promise.resolve()): {
   api: ElectronApi
   app: FakeApp
   bridge: FakeBridge
@@ -94,7 +95,7 @@ function setup(lock = true): {
   const api: ElectronApi = {
     app,
     BrowserWindow: class extends FakeWindow {
-      constructor(_options: Record<string, unknown>) { super(); windows.push(this) }
+      constructor(_options: Record<string, unknown>) { super(); this.loading = loading; windows.push(this) }
     },
     Tray: class extends FakeTray {
       constructor(_image: unknown) { super(); trays.push(this) }
@@ -189,7 +190,10 @@ describe('Electron shell', () => {
 
   it('selects the macOS inset title bar options', () => {
     expect(windowOptions('darwin')).toEqual({ titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } })
-    expect(windowOptions('win32')).toEqual({ titleBarOverlay: true })
+    expect(windowOptions('win32')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: '#111827', symbolColor: '#ffffff', height: 36 },
+    })
   })
 
   it('keeps macOS native controls and ignores overlay theme messages', async () => {
@@ -199,6 +203,23 @@ describe('Electron shell', () => {
     await pending
     setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
     expect(setupResult.windows[0].overlay).toEqual([])
+  })
+
+  it('reports load failures unless shutdown already started', async () => {
+    const failed = setup(true, Promise.reject(new Error('load failed')))
+    const first = runElectronShell(failed.api, failed.bridge)
+    failed.bridge.emit(init)
+    await expect(first).rejects.toThrow('load failed')
+
+    let rejectLoad: (error: Error) => void = () => {}
+    const loading = new Promise<void>((_resolve, reject) => { rejectLoad = reject })
+    const stopping = setup(true, loading)
+    const second = runElectronShell(stopping.api, stopping.bridge)
+    stopping.bridge.emit(init)
+    await vi.waitFor(() => { expect(stopping.windows).toHaveLength(1) })
+    stopping.bridge.emit({ type: 'shutdown' })
+    rejectLoad(new Error('aborted'))
+    await expect(second).resolves.toBeUndefined()
   })
 
   it('validates theme colors and chooses readable symbols', () => {
@@ -229,5 +250,29 @@ describe('Electron shell', () => {
     dispose()
     for (const current of listeners) current({ type: 'duplicate' })
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('bridges Electron JSON lines over stdin and stdout', async () => {
+    let onData: ((chunk: unknown) => void) | undefined
+    const input = { on: (_event: 'data', listener: (chunk: unknown) => void) => { onData = listener } }
+    const writes: string[] = []
+    const output = { on: vi.fn(), write: (chunk: string) => { writes.push(chunk) } }
+    const bridge = createStreamBridge(init, input, output)
+    const listener = vi.fn()
+    const dispose = bridge.onMessage(listener)
+    await Promise.resolve()
+    expect(listener).toHaveBeenCalledWith(init)
+    onData?.('{"type":"shutdown"}\nnot-json\n\n')
+    expect(listener).toHaveBeenCalledWith({ type: 'shutdown' })
+    onData?.('{"type":')
+    onData?.('"shutdown"}\n')
+    expect(listener).toHaveBeenCalledTimes(3)
+    bridge.send({ type: 'ready' })
+    expect(writes).toEqual(['{"type":"ready"}\n'])
+    dispose()
+    onData?.('{"type":"shutdown"}\n')
+    expect(listener).toHaveBeenCalledTimes(3)
+
+    createStreamBridge(init, input, { on: vi.fn() }).send({ type: 'ready' })
   })
 })
