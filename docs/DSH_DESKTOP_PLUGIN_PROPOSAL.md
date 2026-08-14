@@ -173,6 +173,8 @@ dsh --profile desktop
 
 设置变化触发一次性 reconcile。插件为创建的入口写入稳定标识和版本信息；关闭设置或卸载时只删除由本插件创建且标识匹配的入口，不删除用户自行创建的同名文件。失败应记录到 dsh 日志并在设置 UI 返回可操作错误，不阻止主窗口启动。
 
+用户可直接在官方 WebUI 设置页启用这些选项，或编辑用户级 `~/.dsh/settings.yaml`（Windows 对应 `C:\Users\<用户名>\.dsh\settings.yaml`）。设置变更实时生效：`desktop` 创建桌面图标，`appMenu` 创建开始菜单、Applications 或 freedesktop 应用菜单入口，`login` 创建当前用户的登录启动入口。例如 Windows 上启用 `desktop: true` 后会生成 `Desktop\DeepSeek Harness.lnk`，双击等效于执行 `dsh --profile desktop`。这些入口只引用当前运行中的 Node 与 dsh 入口，不复制或签名独立应用程序。
+
 快捷入口和重复启动必须共享单实例策略：同一 `desktop` profile 已有窗口时，新的 `dsh --profile desktop` 只向现有 Electron 子进程发送 focus/show 请求，然后宿主正常退出或复用已有宿主，不创建第二个托盘和第二个 WebUI 会话。单实例锁应位于 profile 作用域并使用平台原子机制，异常退出后可恢复。
 
 ## 9. 性能与可靠性

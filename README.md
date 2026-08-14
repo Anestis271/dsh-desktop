@@ -21,9 +21,9 @@ dsh --profile desktop
 
 The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and quit actions. Its menu follows `locale.preference` from dsh settings (`zh` or `en`) live, without restarting the profile. Closing the window hides it in the tray by default. A profile-scoped single-instance lock prevents two desktop windows from sharing the same dsh profile.
 
-## Settings
+## Creating shortcuts
 
-All optional entry points are disabled by default. Add a `desktop` settings section through dsh's settings UI or profile settings:
+All optional entry points are disabled by default. Enable them in the official WebUI settings page, or edit the user-level dsh settings file (`~/.dsh/settings.yaml`; on Windows, `C:\Users\<name>\.dsh\settings.yaml`):
 
 ```yaml
 desktop:
@@ -36,7 +36,11 @@ desktop:
     login: false
 ```
 
-Shortcut files are written only at user level and carry an ownership marker. Disabling a setting removes only entries created by this plugin. Launch targets invoke the active dsh CLI with `--profile desktop`.
+The settings are applied live. `desktop` creates a Desktop icon, `appMenu` creates a Windows Start Menu, macOS Applications, or Linux application-menu entry, and `login` creates a per-user startup entry. On Windows, for example, setting `desktop: true` creates `Desktop\DeepSeek Harness.lnk`; double-click it to run the same operation as `dsh --profile desktop`.
+
+Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application.
+
+## Window behavior
 
 The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region around them. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
 
