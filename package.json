@@ -20,7 +20,7 @@
     "assets"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/compose-bundle.mjs && tsc -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check": "pnpm run build && pnpm run test:coverage",
@@ -42,8 +42,12 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-home-paths": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/dsh-web-app": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "electron": "^43.4.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { describe, expect, it } from 'vitest'
-import DesktopController, { DESKTOP_SETTINGS_NAMESPACE } from '../src/index.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, internals } from '../src/index.js'
 
 class MemorySettings extends SettingsProvider {
   private document: Record<string, unknown> = {}
@@ -25,6 +25,16 @@ function provideWebServer(ctx: Context): void {
 }
 
 describe('DesktopController', () => {
+  const originalLaunch = internals.launch
+
+  beforeEach(() => {
+    internals.launch = vi.fn(async () => ({ duplicate: false, stop: async () => {} }))
+  })
+
+  afterEach(() => {
+    internals.launch = originalLaunch
+  })
+
   it('applies lightweight defaults without a settings provider', async () => {
     const ctx = new Context()
     provideWebServer(ctx)
@@ -61,6 +71,17 @@ describe('DesktopController', () => {
 
     await settingsFiber.dispose()
     expect(ctx.desktop.current().closeToTray).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('requests dsh shutdown when another instance owns the profile UI', async () => {
+    const ctx = new Context()
+    provideWebServer(ctx)
+    const exit = vi.fn()
+    ctx.provide('appExit', exit)
+    internals.launch = vi.fn(async () => ({ duplicate: true, stop: async () => {} }))
+    await ctx.plugin(DesktopController, {})
+    expect(exit).toHaveBeenCalledWith(0)
     await ctx.fiber.dispose()
   })
 })

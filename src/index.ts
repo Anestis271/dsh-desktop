@@ -8,6 +8,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-cmdline'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -70,6 +73,7 @@ export class DesktopController extends Service {
   static Config = Config
 
   private source: () => ResolvedConfig
+  private session: DesktopSession | undefined
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'desktop')
@@ -78,6 +82,21 @@ export class DesktopController extends Service {
     installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
       setSource: current => { this.source = current as () => ResolvedConfig },
       onChange: () => {},
+    })
+    ctx.effect(async () => {
+      const current = this.current()
+      const options: DesktopLaunchOptions = {
+        url: `http://127.0.0.1:${String(ctx.webServer.port)}`,
+        profileDir: dshHomePath('profiles', 'desktop'),
+        config: current,
+      }
+      const session = await internals.launch(options)
+      this.session = session
+      if (session.duplicate) ctx.get('appExit')?.(0)
+      return async () => {
+        this.session = undefined
+        await session.stop()
+      }
     })
   }
 
@@ -88,3 +107,10 @@ export class DesktopController extends Service {
 }
 
 export default DesktopController
+
+/** Runtime seams kept injectable for lifecycle tests and future dsh hosts. */
+export const internals: {
+  launch: (options: DesktopLaunchOptions) => Promise<DesktopSession>
+} = {
+  launch: launchDesktop,
+}
