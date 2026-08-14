@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
+import { reconcileShortcuts, type LaunchCommand } from './shortcuts.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -74,6 +75,7 @@ export class DesktopController extends Service {
 
   private source: () => ResolvedConfig
   private session: DesktopSession | undefined
+  private shortcutSync: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'desktop')
@@ -81,8 +83,9 @@ export class DesktopController extends Service {
     this.source = () => entry
     installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
       setSource: current => { this.source = current as () => ResolvedConfig },
-      onChange: () => {},
+      onChange: () => { this.queueShortcutSync() },
     })
+    this.queueShortcutSync()
     ctx.effect(async () => {
       const current = this.current()
       const options: DesktopLaunchOptions = {
@@ -104,6 +107,18 @@ export class DesktopController extends Service {
   current(): ResolvedConfig {
     return structuredClone(this.source())
   }
+
+  /** Serialize shortcut writes so rapid settings edits cannot interleave. */
+  private queueShortcutSync(): void {
+    const config = this.current()
+    this.shortcutSync = this.shortcutSync
+      .catch(() => {})
+      .then(() => internals.reconcileShortcuts(config.shortcuts, {
+        platform: process.platform,
+        home: dshHomePath(),
+        command: desktopLaunchCommand(),
+      }))
+  }
 }
 
 export default DesktopController
@@ -111,6 +126,17 @@ export default DesktopController
 /** Runtime seams kept injectable for lifecycle tests and future dsh hosts. */
 export const internals: {
   launch: (options: DesktopLaunchOptions) => Promise<DesktopSession>
+  reconcileShortcuts: typeof reconcileShortcuts
 } = {
   launch: launchDesktop,
+  reconcileShortcuts,
+}
+
+/** Build the portable command used by all optional user-level entry points. */
+export function desktopLaunchCommand(): LaunchCommand {
+  return {
+    executable: process.execPath,
+    args: [process.argv[1] ?? 'dsh', '--profile', 'desktop'],
+    cwd: process.cwd(),
+  }
 }

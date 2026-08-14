@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, internals } from '../src/index.js'
+import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, internals } from '../src/index.js'
 
 class MemorySettings extends SettingsProvider {
   private document: Record<string, unknown> = {}
@@ -26,13 +26,16 @@ function provideWebServer(ctx: Context): void {
 
 describe('DesktopController', () => {
   const originalLaunch = internals.launch
+  const originalReconcile = internals.reconcileShortcuts
 
   beforeEach(() => {
     internals.launch = vi.fn(async () => ({ duplicate: false, stop: async () => {} }))
+    internals.reconcileShortcuts = vi.fn(async () => {})
   })
 
   afterEach(() => {
     internals.launch = originalLaunch
+    internals.reconcileShortcuts = originalReconcile
   })
 
   it('applies lightweight defaults without a settings provider', async () => {
@@ -46,6 +49,10 @@ describe('DesktopController', () => {
       title: 'DeepSeek Harness',
       shortcuts: { desktop: false, appMenu: false, login: false },
     })
+    await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenCalledWith(
+      { desktop: false, appMenu: false, login: false },
+      expect.objectContaining({ platform: process.platform }),
+    ) })
     await ctx.fiber.dispose()
   })
 
@@ -68,6 +75,10 @@ describe('DesktopController', () => {
       title: 'dsh Desktop',
       shortcuts: { desktop: true, appMenu: false, login: false },
     })
+    await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenLastCalledWith(
+      { desktop: true, appMenu: false, login: false },
+      expect.any(Object),
+    ) })
 
     await settingsFiber.dispose()
     expect(ctx.desktop.current().closeToTray).toBe(true)
@@ -83,5 +94,41 @@ describe('DesktopController', () => {
     await ctx.plugin(DesktopController, {})
     expect(exit).toHaveBeenCalledWith(0)
     await ctx.fiber.dispose()
+  })
+
+  it('serializes settings-driven shortcut updates and recovers after a failed write', async () => {
+    const ctx = new Context()
+    provideWebServer(ctx)
+    const settingsFiber = ctx.plugin(MemorySettings)
+    await settingsFiber.await()
+    const reconcile = vi.fn()
+      .mockRejectedValueOnce(new Error('disk unavailable'))
+      .mockResolvedValue(undefined)
+    internals.reconcileShortcuts = reconcile
+    await ctx.plugin(DesktopController, {})
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalled() })
+    await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: true } })
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenLastCalledWith(
+      { desktop: false, appMenu: false, login: true },
+      expect.any(Object),
+    ) })
+    await ctx.fiber.dispose()
+  })
+})
+
+describe('desktopLaunchCommand', () => {
+  it('targets the current dsh entry with the desktop profile', () => {
+    expect(desktopLaunchCommand()).toEqual({
+      executable: process.execPath,
+      args: [process.argv[1], '--profile', 'desktop'],
+      cwd: process.cwd(),
+    })
+  })
+
+  it('has a deterministic fallback for embedded launchers', () => {
+    const entry = process.argv[1]
+    process.argv.splice(1, 1)
+    expect(desktopLaunchCommand().args[0]).toBe('dsh')
+    process.argv.splice(1, 0, entry as string)
   })
 })
