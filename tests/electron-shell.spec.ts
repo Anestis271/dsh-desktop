@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProcessBridge, runElectronShell, TRAY_ICON, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
+import { createProcessBridge, isThemeColor, runElectronShell, titleBarSymbolColor, TRAY_ICON, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
 
 class FakeBridge implements ProcessBridge {
   private readonly listeners = new Set<(message: unknown) => void>()
@@ -41,6 +41,16 @@ class FakeWindow implements BrowserWindowLike {
   visible = false
   loaded = ''
   title = ''
+  overlay: { color: string; symbolColor: string; height: number }[] = []
+  readonly webContents = {
+    listeners: [] as Array<(event: unknown, channel: string, ...args: unknown[]) => void>,
+    on: (_event: 'ipc-message', listener: (event: unknown, channel: string, ...args: unknown[]) => void): void => {
+      this.webContents.listeners.push(listener)
+    },
+    emit: (channel: string, ...args: unknown[]): void => {
+      for (const listener of this.webContents.listeners) listener({}, channel, ...args)
+    },
+  }
 
   async loadURL(url: string): Promise<void> { this.loaded = url }
   show(): void { this.visible = true; this.calls.push('show') }
@@ -49,6 +59,7 @@ class FakeWindow implements BrowserWindowLike {
   reload(): void { this.calls.push('reload') }
   isVisible(): boolean { return this.visible }
   setTitle(title: string): void { this.title = title }
+  setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void { this.overlay.push(options) }
   on(event: string, listener: (...args: never[]) => void): void { this.events.set(event, listener) }
   emit(event: string, ...args: never[]): void { this.events.get(event)?.(...args) }
 }
@@ -124,6 +135,9 @@ describe('Electron shell', () => {
     expect(tray.tooltip).toBe(init.config.title)
     expect(setupResult.bridge.sent).toEqual([{ type: 'ready' }])
     expect(TRAY_ICON).toContain('data:image/svg+xml')
+    window.webContents.emit('dsh-desktop-theme', '#ffffff')
+    window.webContents.emit('dsh-desktop-theme', 'url(javascript:bad)')
+    expect(window.overlay).toEqual([{ color: '#ffffff', symbolColor: '#111827', height: 36 }])
     setupResult.bridge.emit({ type: 'ignored' })
 
     tray.emit('click')
@@ -176,6 +190,26 @@ describe('Electron shell', () => {
   it('selects the macOS inset title bar options', () => {
     expect(windowOptions('darwin')).toEqual({ titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } })
     expect(windowOptions('win32')).toEqual({ titleBarOverlay: true })
+  })
+
+  it('keeps macOS native controls and ignores overlay theme messages', async () => {
+    const setupResult = setup()
+    const pending = runElectronShell(setupResult.api, setupResult.bridge, 'darwin')
+    setupResult.bridge.emit(init)
+    await pending
+    setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
+    expect(setupResult.windows[0].overlay).toEqual([])
+  })
+
+  it('validates theme colors and chooses readable symbols', () => {
+    expect(isThemeColor('#abc')).toBe(true)
+    expect(isThemeColor('rgba(1, 2, 3, .5)')).toBe(true)
+    expect(isThemeColor('url(x)')).toBe(false)
+    expect(isThemeColor(null)).toBe(false)
+    expect(titleBarSymbolColor('#ffffff')).toBe('#111827')
+    expect(titleBarSymbolColor('#000000')).toBe('#ffffff')
+    expect(titleBarSymbolColor('#abc')).toBe('#111827')
+    expect(titleBarSymbolColor('rgb(1, 2, 3)')).toBe('#ffffff')
   })
 
   it('creates a process bridge that forwards and disposes process IPC listeners', () => {

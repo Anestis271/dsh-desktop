@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { RuntimeChildMessage, RuntimeParentMessage, RuntimeInitMessage } from './protocol.js'
 import { isRuntimeInitMessage, isRuntimeShutdownMessage } from './protocol.js'
 
@@ -16,6 +17,10 @@ export interface BrowserWindowLike {
   reload(): void
   isVisible(): boolean
   setTitle(title: string): void
+  setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void
+  webContents: {
+    on(event: 'ipc-message', listener: (event: unknown, channel: string, ...args: unknown[]) => void): void
+  }
   on(event: string, listener: (...args: never[]) => void): void
 }
 
@@ -72,6 +77,26 @@ const TRAY_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   + '</svg>',
 )
 
+const PRELOAD_PATH = fileURLToPath(new URL('./electron-preload.cjs', import.meta.url))
+
+/** Accept only colors emitted by the official theme metadata presenter. */
+export function isThemeColor(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:#[\da-f]{3,8}|rgba?\([\d%.,\s]+\))$/i.test(value)
+}
+
+/** Pick a readable native caption-button glyph color for a known theme color. */
+export function titleBarSymbolColor(color: string): string {
+  const hex = color.match(/^#([\da-f]{3,8})$/i)?.[1]
+  if (hex === undefined) return '#ffffff'
+  const normalized = hex.length <= 4
+    ? hex.slice(0, 3).split('').map(value => value + value).join('')
+    : hex.slice(0, 6)
+  const red = Number.parseInt(normalized.slice(0, 2), 16)
+  const green = Number.parseInt(normalized.slice(2, 4), 16)
+  const blue = Number.parseInt(normalized.slice(4, 6), 16)
+  return (red * 299 + green * 587 + blue * 114) >= 150_000 ? '#111827' : '#ffffff'
+}
+
 export function createProcessBridge(source: ProcessLike = process as unknown as ProcessLike): ProcessBridge {
   return {
     onMessage(listener) {
@@ -103,7 +128,11 @@ export function windowOptions(platform: NodeJS.Platform = process.platform): Rec
 }
 
 /** Run the Electron desktop shell after receiving the dsh host handshake. */
-export async function runElectronShell(api: ElectronApi, bridge: ProcessBridge = createProcessBridge()): Promise<void> {
+export async function runElectronShell(
+  api: ElectronApi,
+  bridge: ProcessBridge = createProcessBridge(),
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
   const init = await waitForInit(bridge)
   api.app.setName(init.config.title)
   api.app.setPath('userData', join(init.profileDir, 'desktop-shell'))
@@ -140,7 +169,7 @@ export async function runElectronShell(api: ElectronApi, bridge: ProcessBridge =
 
   const icon = api.nativeImage.createFromDataURL(TRAY_ICON)
   window = new api.BrowserWindow({
-    ...windowOptions(),
+    ...windowOptions(platform),
     title: init.config.title,
     show: !init.config.startHidden,
     width: 1280,
@@ -149,12 +178,18 @@ export async function runElectronShell(api: ElectronApi, bridge: ProcessBridge =
     minHeight: 600,
     backgroundColor: '#111827',
     webPreferences: {
+      preload: PRELOAD_PATH,
+      additionalArguments: platform === 'darwin' ? [] : ['--dsh-desktop-right-controls'],
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
     },
   })
   window.setTitle(init.config.title)
+  window.webContents.on('ipc-message', (_event, channel, ...args) => {
+    if (channel !== 'dsh-desktop-theme' || !isThemeColor(args[0]) || platform === 'darwin') return
+    window?.setTitleBarOverlay({ color: args[0], symbolColor: titleBarSymbolColor(args[0]), height: 36 })
+  })
   window.on('close', (event: CloseEventLike) => {
     if (!quitting && init.config.closeToTray) {
       event.preventDefault()

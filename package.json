@@ -15,6 +15,7 @@
   },
   "files": [
     "lib/**/*.js",
+    "lib/**/*.cjs",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "assets"

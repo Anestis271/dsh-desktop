@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const webPatchUrl = import.meta.resolve('@deepseek-ai/dsh-web-app/cordis.patch.yml')
@@ -31,3 +31,8 @@ const desktopPatch = `
 `
 
 await writeFile(fileURLToPath(outputUrl), `${webPatch.trimEnd()}${desktopPatch}`)
+await mkdir(fileURLToPath(new URL('../lib/', import.meta.url)), { recursive: true })
+await copyFile(
+  fileURLToPath(new URL('../src/electron-preload.cjs', import.meta.url)),
+  fileURLToPath(new URL('../lib/electron-preload.cjs', import.meta.url)),
+)
