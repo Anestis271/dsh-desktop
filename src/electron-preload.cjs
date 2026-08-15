@@ -38,10 +38,10 @@ function installDragRegion() {
   region.id = 'dsh-desktop-titlebar-drag-region'
   const style = document.createElement('style')
   const rightControls = process.argv.includes('--dsh-desktop-right-controls')
-  const right = rightControls ? '138px' : '0'
+  const right = rightControls ? '270px' : '0'
   const utilitiesClearance = rightControls
-    ? `header:has([data-slot='conversation.session.header.utilities']){padding-right:138px!important}`
-      + `header :has(>[data-slot='conversation.session.header.utilities']){position:relative;z-index:2147483647}`
+    ? `header:has([data-slot='conversation.session.header.utilities']){padding-right:148px!important}`
+      + `header :has(>[data-slot='conversation.session.header.utilities']){position:relative;z-index:2147483647;-webkit-app-region:no-drag}`
     : ''
   style.textContent = `#dsh-desktop-titlebar-drag-region{position:fixed;top:0;left:50%;right:${right};height:36px;z-index:2147483646;-webkit-app-region:drag;user-select:none}${utilitiesClearance}`
   document.head.append(style)
