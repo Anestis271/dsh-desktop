@@ -56,8 +56,9 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@electron/get": "^5.1.0",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "electron": "^43.4.0"
+    "extract-zip": "^2.0.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

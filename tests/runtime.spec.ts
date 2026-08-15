@@ -1,8 +1,11 @@
 import { EventEmitter } from 'node:events'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
-import { ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
+import { electronExecutable, electronInternals, ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, runtimeInternals, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
   readonly sent: unknown[] = []
@@ -58,7 +61,18 @@ function dependencies(child: FakeChild): RuntimeDependencies {
   }
 }
 
-afterEach(() => { vi.useRealTimers() })
+const originalDownload = electronInternals.download
+const originalExtract = electronInternals.extract
+const originalNonce = electronInternals.nonce
+const originalProductionDependencies = runtimeInternals.productionDependencies
+
+afterEach(() => {
+  vi.useRealTimers()
+  electronInternals.download = originalDownload
+  electronInternals.extract = originalExtract
+  electronInternals.nonce = originalNonce
+  runtimeInternals.productionDependencies = originalProductionDependencies
+})
 
 describe('runtime protocol guards', () => {
   it('accepts complete init and shutdown messages', () => {
@@ -84,13 +98,66 @@ describe('runtime protocol guards', () => {
 })
 
 describe('runtime launcher', () => {
-  it('resolves a valid electron executable and rejects invalid package exports', () => {
-    expect(resolveElectronPath(() => 'electron.exe')).toBe('electron.exe')
-    expect(() => resolveElectronPath(() => '')).toThrow(/did not resolve/)
-    expect(() => resolveElectronPath(() => undefined)).toThrow(/did not resolve/)
-    const production = productionRuntimeDependencies()
-    expect(production.electronPath).toContain('electron')
+  it('maps Electron release executables and rejects unsupported platforms', () => {
+    expect(electronExecutable('win32')).toBe('electron.exe')
+    expect(electronExecutable('darwin')).toBe(join('Electron.app', 'Contents', 'MacOS', 'Electron'))
+    expect(electronExecutable('linux')).toBe('electron')
+    expect(electronExecutable('freebsd')).toBe('electron')
+    expect(electronExecutable('openbsd')).toBe('electron')
+    expect(() => electronExecutable('aix')).toThrow(/unavailable/)
+  })
+
+  it('installs one verified runtime atomically and reuses it', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
+    electronInternals.nonce = () => 'test'
+    electronInternals.download = vi.fn(async () => 'electron.zip')
+    electronInternals.extract = vi.fn(async (_archive, destination) => {
+      const executable = join(destination, electronExecutable(process.platform))
+      await mkdir(dirname(executable), { recursive: true })
+      await writeFile(executable, '')
+    })
+
+    const first = await resolveElectronPath(profile)
+    expect(first).toContain(`43.4.0-${process.platform}-${process.arch}`)
+    expect(electronInternals.download).toHaveBeenCalledWith(process.platform, process.arch)
+    expect(await resolveElectronPath(profile)).toBe(first)
+    expect(electronInternals.download).toHaveBeenCalledTimes(1)
+    const production = await productionRuntimeDependencies(profile)
+    expect(production.electronPath).toBe(first)
     expect(production.entryPath).toContain('electron-entry.cjs')
+    await rm(profile, { recursive: true, force: true })
+  })
+
+  it('rejects incomplete archives and preserves a concurrent completed install', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
+    electronInternals.nonce = () => 'missing'
+    electronInternals.download = vi.fn(async () => 'electron.zip')
+    electronInternals.extract = vi.fn(async () => {})
+    await expect(resolveElectronPath(profile, 'win32', 'x64')).rejects.toThrow(/no executable/)
+
+    electronInternals.nonce = () => 'race'
+    electronInternals.extract = vi.fn(async (_archive, staging) => {
+      await mkdir(staging, { recursive: true })
+      await writeFile(join(staging, 'electron.exe'), '')
+      const completed = join(profile, 'desktop-shell', 'electron', '43.4.0-win32-x64')
+      await mkdir(completed, { recursive: true })
+      await writeFile(join(completed, 'electron.exe'), '')
+    })
+    await expect(resolveElectronPath(profile, 'win32', 'x64')).resolves.toContain('electron.exe')
+    await rm(profile, { recursive: true, force: true })
+  })
+
+  it('surfaces an atomic install collision when no completed runtime exists', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
+    electronInternals.nonce = () => 'collision'
+    electronInternals.download = vi.fn(async () => 'electron.zip')
+    electronInternals.extract = vi.fn(async (_archive, staging) => {
+      await mkdir(staging, { recursive: true })
+      await writeFile(join(staging, 'electron.exe'), '')
+      await mkdir(join(profile, 'desktop-shell', 'electron', '43.4.0-win32-x64'), { recursive: true })
+    })
+    await expect(resolveElectronPath(profile, 'win32', 'x64')).rejects.toThrow()
+    await rm(profile, { recursive: true, force: true })
   })
 
   it('starts on ready and stops through the child IPC channel', async () => {
@@ -106,6 +173,17 @@ describe('runtime launcher', () => {
     await session.stop()
     expect(child.sent.at(-1)).toEqual({ type: 'shutdown' })
     expect(child.killed).toBe(false)
+  })
+
+  it('resolves production dependencies when no launcher override is supplied', async () => {
+    const child = new FakeChild()
+    runtimeInternals.productionDependencies = vi.fn(async () => dependencies(child))
+    const pending = launchDesktop(options)
+    await vi.waitFor(() => { expect(runtimeInternals.productionDependencies).toHaveBeenCalledWith(options.profileDir) })
+    child.emit('spawn')
+    child.emit('message', { type: 'ready' })
+    const session = await pending
+    await session.stop()
   })
 
   it('uses JSON-line streams with a real Electron-style child', async () => {

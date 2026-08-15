@@ -24,6 +24,8 @@ Do not use `add .` for runtime verification: pnpm links the checkout, so Node ca
 
 The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and quit actions. Its menu follows `locale.preference` from dsh settings (`zh` or `en`) live, without restarting the profile. Closing the window hides it in the tray by default. A profile-scoped single-instance lock prevents two desktop windows from sharing the same dsh profile.
 
+On first start, the plugin downloads the pinned Electron runtime for the current OS and architecture, verifies it through Electron's official artifact client, and caches it under the `desktop` profile. Later starts reuse that runtime; the npm install itself runs no dependency build scripts.
+
 ## Creating shortcuts
 
 All optional entry points are disabled by default. Open **Settings → General → Desktop shortcuts** in the official WebUI and use the three live switches, or edit the user-level dsh settings file (`~/.dsh/settings.yaml`; on Windows, `C:\Users\<name>\.dsh\settings.yaml`):

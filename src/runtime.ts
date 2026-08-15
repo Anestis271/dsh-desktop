@@ -1,8 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
+import { mkdir, rename, rm } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { downloadArtifact } from '@electron/get'
+import extract from 'extract-zip'
 import type { ResolvedConfig } from './index.js'
 import { isRuntimeChildMessage, type DesktopLocale, type RuntimeInitMessage, type RuntimeParentMessage } from './protocol.js'
 
@@ -51,20 +55,72 @@ interface StreamChild {
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000
 const DEFAULT_STOP_TIMEOUT_MS = 5_000
+const ELECTRON_VERSION = '43.4.0'
 
-/** Resolve the installed Electron executable without importing its renderer APIs into dsh. */
-export function resolveElectronPath(requireModule: NodeJS.Require = createRequire(import.meta.url)): string {
-  const value: unknown = requireModule('electron')
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error('dsh-desktop: electron package did not resolve to an executable')
+/* v8 ignore start -- production download boundaries; tests replace these seams */
+const downloadElectron = (platform: NodeJS.Platform, arch: string): Promise<string> => downloadArtifact({
+    version: ELECTRON_VERSION,
+    artifactName: 'electron',
+    platform,
+    arch,
+  })
+const extractElectron = (archive: string, destination: string): Promise<void> => extract(archive, { dir: destination })
+/* v8 ignore stop */
+
+/** Download seams kept mutable for deterministic artifact tests. */
+export const electronInternals = {
+  download: downloadElectron,
+  extract: extractElectron,
+  nonce: randomUUID,
+}
+
+/** Relative executable location used by Electron release archives. */
+export function electronExecutable(platform: NodeJS.Platform): string {
+  switch (platform) {
+    case 'win32': return 'electron.exe'
+    case 'darwin': return join('Electron.app', 'Contents', 'MacOS', 'Electron')
+    case 'linux':
+    case 'freebsd':
+    case 'openbsd': return 'electron'
+    default: throw new Error(`dsh-desktop: Electron is unavailable on ${platform}`)
   }
-  return value
+}
+
+/** Resolve or atomically install the one platform runtime used by this profile. */
+export async function resolveElectronPath(
+  profileDir: string,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): Promise<string> {
+  const relative = electronExecutable(platform)
+  const destination = join(profileDir, 'desktop-shell', 'electron', `${ELECTRON_VERSION}-${platform}-${arch}`)
+  const executable = join(destination, relative)
+  if (existsSync(executable)) return executable
+
+  await mkdir(dirname(destination), { recursive: true })
+  const staging = `${destination}.tmp-${electronInternals.nonce()}`
+  try {
+    const archive = await electronInternals.download(platform, arch)
+    await electronInternals.extract(archive, staging)
+    const stagedExecutable = join(staging, relative)
+    if (!existsSync(stagedExecutable)) {
+      throw new Error('dsh-desktop: downloaded Electron archive has no executable')
+    }
+    try {
+      await rename(staging, destination)
+    } catch (error) {
+      if (!existsSync(executable)) throw error
+    }
+    return executable
+  } finally {
+    await rm(staging, { recursive: true, force: true })
+  }
 }
 
 /** Production process dependencies. */
-export function productionRuntimeDependencies(): RuntimeDependencies {
+export async function productionRuntimeDependencies(profileDir: string): Promise<RuntimeDependencies> {
   return {
-    electronPath: resolveElectronPath(),
+    electronPath: await resolveElectronPath(profileDir),
     entryPath: fileURLToPath(new URL('./electron-entry.cjs', import.meta.url)),
     spawnProcess: spawn,
     startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
@@ -72,6 +128,9 @@ export function productionRuntimeDependencies(): RuntimeDependencies {
     openControlServer,
   }
 }
+
+/** Production dependency seam for exercising the default launcher path. */
+export const runtimeInternals = { productionDependencies: productionRuntimeDependencies }
 
 /** Open a token-authenticated loopback channel for the Electron GUI process. */
 export async function openControlServer(): Promise<ControlServer> {
@@ -124,13 +183,14 @@ function delay(ms: number): Promise<void> {
 /** Launch the Electron child and wait for a validated readiness result. */
 export async function launchDesktop(
   options: DesktopLaunchOptions,
-  dependencies: RuntimeDependencies = productionRuntimeDependencies(),
+  dependencies?: RuntimeDependencies,
 ): Promise<DesktopSession> {
-  const control = dependencies.openControlServer === undefined
+  const runtime = dependencies ?? await runtimeInternals.productionDependencies(options.profileDir)
+  const control = runtime.openControlServer === undefined
     ? undefined
-    : await dependencies.openControlServer()
+    : await runtime.openControlServer()
   const init: RuntimeInitMessage = { type: 'init', ...options }
-  const child = dependencies.spawnProcess(dependencies.electronPath, [dependencies.entryPath], {
+  const child = runtime.spawnProcess(runtime.electronPath, [runtime.entryPath], {
     stdio: ['pipe', 'pipe', 'inherit'],
     windowsHide: true,
     env: {
@@ -167,7 +227,7 @@ export async function launchDesktop(
     const timer = setTimeout(() => {
       child.kill()
       settle(new Error('dsh-desktop: Electron startup timed out'))
-    }, dependencies.startupTimeoutMs)
+    }, runtime.startupTimeoutMs)
 
     child.once('error', error => { settle(error) })
     void exitPromise.then(() => {
@@ -199,7 +259,7 @@ export async function launchDesktop(
     async stop(): Promise<void> {
       if (exited) return
       sendToChild({ type: 'shutdown' })
-      await Promise.race([exitPromise, delay(dependencies.stopTimeoutMs)])
+      await Promise.race([exitPromise, delay(runtime.stopTimeoutMs)])
       if (!exited) child.kill()
       await control?.close()
     },

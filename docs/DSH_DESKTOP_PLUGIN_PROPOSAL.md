@@ -77,7 +77,7 @@ dsh 仓库内部包遵循 `@deepseek-ai/dsh-*` 命名和 workspace 约束；本�
 
 该命令的前置条件是 dsh 当前版本可用的 pnpm 运行时；若 dsh 发行版不自带 pnpm，README、安装检查和验收脚本必须明确提示用户安装匹配版本。插件本身不应偷偷下载或替换 pnpm，也不应把 profile 的 `node_modules` 提升到用户全局目录。
 
-bundle patch 应只增加桌面所需的宿主插件行，并显式依赖/复用 dsh 的 web-app bundle 或等价的官方 WebUI 组合；不能在 patch 中复制 WebUI 的插件清单。普通运行依赖放在 npm `dependencies`，profile 层激活声明放在 `dsh.bundle.patch`，两者职责分离。
+bundle patch 应只增加桌面所需的宿主插件行，并显式依赖/复用 dsh 的 web-app bundle 或等价的官方 WebUI 组合；不能在 patch 中复制 WebUI 的插件清单。普通运行依赖放在 npm `dependencies`，profile 层激活声明放在 `dsh.bundle.patch`，两者职责分离。为兼容 dsh profile 的 pnpm 构建脚本门禁，包不依赖带安装脚本的 `electron` npm 包；首次启动通过 Electron 官方 artifact client 下载并校验当前平台的固定版本，原子解压到 profile 缓存，后续启动直接复用。
 
 推荐将 `@deepseek-ai/dsh-web-app` 作为该包的运行依赖而非复制其 patch。这样安装 desktop 包时，dsh 的依赖扫描会同时发现官方 Web bundle 和 desktop bundle；profile 的最终顺序应为 `dsh-base`、`dsh-web-app`、`@anestis/dsh-desktop`，并由 dsh 的 bundle 解析结果验证，而不是由插件自行重排。
 
