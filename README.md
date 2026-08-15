@@ -23,7 +23,7 @@ The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and 
 
 ## Creating shortcuts
 
-All optional entry points are disabled by default. Enable them in the official WebUI settings page, or edit the user-level dsh settings file (`~/.dsh/settings.yaml`; on Windows, `C:\Users\<name>\.dsh\settings.yaml`):
+All optional entry points are disabled by default. Open **Settings → General → Desktop shortcuts** in the official WebUI and use the three live switches, or edit the user-level dsh settings file (`~/.dsh/settings.yaml`; on Windows, `C:\Users\<name>\.dsh\settings.yaml`):
 
 ```yaml
 desktop:
