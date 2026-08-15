@@ -49,7 +49,7 @@ The `desktop` namespace remains owned and persisted by dsh's settings provider. 
 
 ## Window behavior
 
-The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region around them. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
+The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region between the live sidebar edge and the native caption buttons. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
 
 ## Development
 
