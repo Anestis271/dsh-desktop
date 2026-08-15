@@ -13,10 +13,7 @@ Turn the official DeepSeek Harness WebUI into a natural desktop experience.
 
 ## Preview
 
-<!-- Save the desktop screenshot as docs/images/desktop-preview.png, then replace the placeholder below with this image. -->
-<!-- ![dsh Desktop preview](./docs/images/desktop-preview.png) -->
-
-> Desktop screenshot placeholder. A product preview will be added here.
+![DeepSeek Harness Desktop preview](./docs/images/desktop-preview.png)
 
 ## Why dsh Desktop
 

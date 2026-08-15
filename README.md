@@ -13,10 +13,7 @@
 
 ## 界面预览
 
-<!-- 将桌面端截图保存到 docs/images/desktop-preview.png，然后用下面的图片替换占位文字。 -->
-<!-- ![dsh Desktop 界面预览](./docs/images/desktop-preview.png) -->
-
-> 桌面端截图占位，稍后补充。
+![DeepSeek Harness Desktop 界面预览](./docs/images/desktop-preview.png)
 
 ## 为什么选择 dsh Desktop
 
