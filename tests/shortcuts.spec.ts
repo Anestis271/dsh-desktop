@@ -49,9 +49,9 @@ describe('shortcut serialization', () => {
     expect(shortcutPaths('darwin', '/Users/Ada')).toEqual({
       desktop: join('/Users/Ada', 'Desktop', 'DeepSeek Harness.command'),
       appMenu: join('/Users/Ada', 'Applications', 'DeepSeek Harness.command'),
-      login: join('/Users/Ada', 'Library', 'LaunchAgents', 'com.anestis.dsh-desktop.plist'),
+      login: join('/Users/Ada', 'Library', 'LaunchAgents', 'com.anestis271.dsh-desktop.plist'),
     })
-    expect(shortcutPaths('linux', '/home/ada').appMenu).toBe(join('/home/ada', '.local', 'share', 'applications', 'com.anestis.dsh-desktop.desktop'))
+    expect(shortcutPaths('linux', '/home/ada').appMenu).toBe(join('/home/ada', '.local', 'share', 'applications', 'com.anestis271.dsh-desktop.desktop'))
   })
 
   it('serializes freedesktop and launch-agent entries safely', () => {

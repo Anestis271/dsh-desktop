@@ -3,7 +3,7 @@ import { basename, resolve } from 'node:path'
 import { build } from 'esbuild'
 import { transform } from 'lightningcss'
 
-const PLUGIN_ID = '@anestis/dsh-desktop'
+const PLUGIN_ID = '@anestis271/dsh-desktop'
 
 const cssModules = {
   name: 'dsh-desktop-css-modules',

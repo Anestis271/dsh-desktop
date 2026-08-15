@@ -142,10 +142,10 @@ describe('Electron shell', () => {
     expect(window.visible).toBe(true)
     expect(tray.tooltip).toBe(init.config.title)
     expect(setupResult.bridge.sent).toEqual([{ type: 'ready' }])
-    expect(setupResult.app.appUserModelId).toBe('com.anestis.dsh-desktop')
+    expect(setupResult.app.appUserModelId).toBe('com.anestis271.dsh-desktop')
     expect(setupResult.api.nativeImage.createFromPath).toHaveBeenCalledWith(expect.stringMatching(/dsh-desktop\.ico$/))
     expect(window.appDetails).toEqual([{
-      appId: 'com.anestis.dsh-desktop',
+      appId: 'com.anestis271.dsh-desktop',
       appIconPath: expect.stringMatching(/dsh-desktop\.ico$/),
       appIconIndex: 0,
       relaunchCommand: init.relaunchCommand,

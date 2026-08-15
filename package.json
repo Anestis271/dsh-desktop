@@ -1,7 +1,8 @@
 {
-  "name": "@anestis/dsh-desktop",
-  "version": "0.1.0",
+  "name": "@anestis271/dsh-desktop",
+  "version": "1.0.0",
   "description": "Cross-platform desktop shell for DeepSeek Harness",
+  "author": "anestis271",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -30,7 +31,11 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check": "pnpm run build && pnpm run test:coverage",
-    "prepare": "pnpm run build"
+    "prepare": "pnpm run build",
+    "prepublishOnly": "pnpm run check"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

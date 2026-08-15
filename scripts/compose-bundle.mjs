@@ -27,7 +27,7 @@ const desktopPatch = `
 
 - insert:
     - id: desktop
-      name: '@anestis/dsh-desktop'
+      name: '@anestis271/dsh-desktop'
       inject: [webServer, settings]
 `
 

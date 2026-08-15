@@ -1,7 +1,7 @@
 /**
  * dsh desktop-shell settings and lifecycle service.
  *
- * @module @anestis/dsh-desktop
+ * @module @anestis271/dsh-desktop
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

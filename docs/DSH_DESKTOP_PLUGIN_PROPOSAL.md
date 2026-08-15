@@ -1,6 +1,6 @@
 # dsh Desktop 插件方案
 
-本文档描述 `@anestis/dsh-desktop` 的设计与实施方案。
+本文档描述 `@anestis271/dsh-desktop` 的设计与实施方案。
 
 ## 1. 目标与边界
 
@@ -9,7 +9,7 @@
 目标安装与启动方式：
 
 ```bash
-dsh plugin --profile desktop add @anestis/dsh-desktop
+dsh plugin --profile desktop add @anestis271/dsh-desktop
 dsh --profile desktop
 ```
 
@@ -55,7 +55,7 @@ dsh --profile desktop
 建议结构如下，最终名称以 dsh 官方规范要求为准：
 
 ```text
-@anestis/dsh-desktop/
+@anestis271/dsh-desktop/
   dist/
     index.js              # dsh 插件入口
     main.js               # Electron main process
@@ -71,15 +71,15 @@ dsh --profile desktop
 
 `package.json` 应包含 dsh 要求的插件声明、明确的 `engines`、兼容 dsh 版本范围和导出入口。dsh 插件 API 应作为 peer dependency；不得将 dsh 服务端或 WebUI 重复打包。构建输出使用 ESM 或 dsh 当前统一的模块制式，发布包仅包含运行必需文件。
 
-dsh 仓库内部包遵循 `@deepseek-ai/dsh-*` 命名和 workspace 约束；本项目作为树外插件，按用户指定发布为 `@anestis/dsh-desktop`，不应为了套用内部包名而修改 dsh 的 monorepo。
+dsh 仓库内部包遵循 `@deepseek-ai/dsh-*` 命名和 workspace 约束；本项目作为树外插件，发布为 `@anestis271/dsh-desktop`，不应为了套用内部包名而修改 dsh 的 monorepo。
 
-包必须声明 dsh 可识别的 profile bundle patch，例如 `dsh.bundle.patch: "./cordis.patch.yml"`，并在发布包的 `files` 中包含该 patch。`dsh plugin --profile desktop add @anestis/dsh-desktop` 会在 profile 目录中转发为 pnpm 安装；安装成功后 dsh 根据已安装依赖重新扫描 `dsh.bundle.patch`，自动把该包加入 `dsh.profile.bundles`。插件不能依赖“命令行 add 的参数顺序”来激活，也不能要求用户手工编辑 profile manifest。
+包必须声明 dsh 可识别的 profile bundle patch，例如 `dsh.bundle.patch: "./cordis.patch.yml"`，并在发布包的 `files` 中包含该 patch。`dsh plugin --profile desktop add @anestis271/dsh-desktop` 会在 profile 目录中转发为 pnpm 安装；安装成功后 dsh 根据已安装依赖重新扫描 `dsh.bundle.patch`，自动把该包加入 `dsh.profile.bundles`。插件不能依赖“命令行 add 的参数顺序”来激活，也不能要求用户手工编辑 profile manifest。
 
 该命令的前置条件是 dsh 当前版本可用的 pnpm 运行时；若 dsh 发行版不自带 pnpm，README、安装检查和验收脚本必须明确提示用户安装匹配版本。插件本身不应偷偷下载或替换 pnpm，也不应把 profile 的 `node_modules` 提升到用户全局目录。
 
 bundle patch 应只增加桌面所需的宿主插件行，并显式依赖/复用 dsh 的 web-app bundle 或等价的官方 WebUI 组合；不能在 patch 中复制 WebUI 的插件清单。普通运行依赖放在 npm `dependencies`，profile 层激活声明放在 `dsh.bundle.patch`，两者职责分离。为兼容 dsh profile 的 pnpm 构建脚本门禁，包不依赖带安装脚本的 `electron` npm 包；首次启动通过 Electron 官方 artifact client 下载并校验当前平台的固定版本，原子解压到 profile 缓存，后续启动直接复用。
 
-推荐将 `@deepseek-ai/dsh-web-app` 作为该包的运行依赖而非复制其 patch。这样安装 desktop 包时，dsh 的依赖扫描会同时发现官方 Web bundle 和 desktop bundle；profile 的最终顺序应为 `dsh-base`、`dsh-web-app`、`@anestis/dsh-desktop`，并由 dsh 的 bundle 解析结果验证，而不是由插件自行重排。
+推荐将 `@deepseek-ai/dsh-web-app` 作为该包的运行依赖而非复制其 patch。这样安装 desktop 包时，dsh 的依赖扫描会同时发现官方 Web bundle 和 desktop bundle；profile 的最终顺序应为 `dsh-base`、`dsh-web-app`、`@anestis271/dsh-desktop`，并由 dsh 的 bundle 解析结果验证，而不是由插件自行重排。
 
 ### Electron runtime 的分发
 

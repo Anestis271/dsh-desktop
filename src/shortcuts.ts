@@ -53,13 +53,13 @@ export function shortcutPaths(platform: NodeJS.Platform, home: string = homedir(
     return {
       desktop: join(home, 'Desktop', `${PRODUCT}.command`),
       appMenu: join(home, 'Applications', `${PRODUCT}.command`),
-      login: join(home, 'Library', 'LaunchAgents', 'com.anestis.dsh-desktop.plist'),
+      login: join(home, 'Library', 'LaunchAgents', 'com.anestis271.dsh-desktop.plist'),
     }
   }
   return {
     desktop: join(home, 'Desktop', `${PRODUCT}.desktop`),
-    appMenu: join(home, '.local', 'share', 'applications', 'com.anestis.dsh-desktop.desktop'),
-    login: join(home, '.config', 'autostart', 'com.anestis.dsh-desktop.desktop'),
+    appMenu: join(home, '.local', 'share', 'applications', 'com.anestis271.dsh-desktop.desktop'),
+    login: join(home, '.config', 'autostart', 'com.anestis271.dsh-desktop.desktop'),
   }
 }
 
@@ -140,7 +140,7 @@ export function launchAgent(command: LaunchCommand): string {
   const values = [command.executable, ...command.args]
     .map(value => `<string>${value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</string>`)
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>com.anestis.dsh-desktop</string><key>ProgramArguments</key><array>${values}</array><key>WorkingDirectory</key><string>${command.cwd}</string><key>X-dsh-owner</key><string>${MARKER}</string><key>RunAtLoad</key><true/></dict></plist>\n`
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>com.anestis271.dsh-desktop</string><key>ProgramArguments</key><array>${values}</array><key>WorkingDirectory</key><string>${command.cwd}</string><key>X-dsh-owner</key><string>${MARKER}</string><key>RunAtLoad</key><true/></dict></plist>\n`
 }
 
 function markerPath(path: string): string {

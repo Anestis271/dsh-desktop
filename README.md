@@ -1,13 +1,13 @@
 # dsh Desktop
 
-`@anestis/dsh-desktop` is a small Electron shell for the official DeepSeek Harness WebUI. It does not replace or re-render the WebUI: dsh starts the Web server, and the plugin opens the supplied URL in one isolated desktop window.
+`@anestis271/dsh-desktop` is a small Electron shell for the official DeepSeek Harness WebUI. It does not replace or re-render the WebUI: dsh starts the Web server, and the plugin opens the supplied URL in one isolated desktop window.
 
 ## Install and start
 
 Install the plugin into the `desktop` profile, then start that profile:
 
 ```bash
-dsh plugin --profile desktop add @anestis/dsh-desktop
+dsh plugin --profile desktop add @anestis271/dsh-desktop
 dsh --profile desktop
 ```
 

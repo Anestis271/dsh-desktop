@@ -104,7 +104,7 @@ export interface StreamLike {
 const PRELOAD_PATH = fileURLToPath(new URL('./electron-preload.cjs', import.meta.url))
 const ICON_PNG_PATH = fileURLToPath(new URL('../assets/dsh-desktop.png', import.meta.url))
 const ICON_ICO_PATH = fileURLToPath(new URL('../assets/dsh-desktop.ico', import.meta.url))
-const WINDOWS_APP_ID = 'com.anestis.dsh-desktop'
+const WINDOWS_APP_ID = 'com.anestis271.dsh-desktop'
 
 /** Select the native multi-resolution format where Windows shell surfaces need it. */
 export function desktopIconPath(platform: NodeJS.Platform = process.platform): string {
