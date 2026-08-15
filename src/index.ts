@@ -6,7 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -90,8 +90,7 @@ export class DesktopController extends Service {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'desktop')
     const entry = config as ResolvedConfig
-    const settings = ctx.settings.register(DESKTOP_SETTINGS_NAMESPACE, Config, { base: entry })
-    this.source = () => settings.get() as ResolvedConfig
+    this.source = () => entry
     this.locale = desktopLocale(ctx.get('settings')?.get(LOCALE_SETTINGS_NAMESPACE))
     ctx.on('settings/updated', (ns, next) => {
       if (ns !== LOCALE_SETTINGS_NAMESPACE) return
@@ -100,7 +99,10 @@ export class DesktopController extends Service {
       this.locale = locale
       this.session?.updateLocale(locale)
     })
-    ctx.effect(() => settings.watch(() => { this.queueShortcutSync() }), 'dsh-desktop: settings watcher')
+    installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
+      setSource: current => { this.source = current as () => ResolvedConfig },
+      onChange: () => { this.queueShortcutSync() },
+    })
     this.queueShortcutSync()
     ctx.effect(async () => {
       const current = this.current()

@@ -44,6 +44,7 @@ describe('DesktopController', () => {
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin(DesktopController, {})
 
+    expect(ctx.settings.describe().map(({ ns }) => ns)).toContain(DESKTOP_SETTINGS_NAMESPACE)
     expect(ctx.desktop.current()).toEqual({
       closeToTray: true,
       startHidden: false,
