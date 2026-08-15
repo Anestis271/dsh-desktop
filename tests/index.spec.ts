@@ -10,6 +10,11 @@ import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, de
 class MemorySettings extends SettingsProvider {
   private document: Record<string, unknown> = {}
 
+  seed(ns: SettingsNamespace, section: Record<string, unknown>): void {
+    this.document = { ...this.document, [ns]: structuredClone(section) }
+    this.publish(structuredClone(this.document))
+  }
+
   get writable(): boolean {
     return true
   }
@@ -93,6 +98,8 @@ describe('DesktopController', () => {
     provideWebServer(ctx)
     const settingsFiber = ctx.plugin(MemorySettings)
     await settingsFiber.await()
+    const settings = ctx.settings as MemorySettings
+    settings.seed(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: false } })
     await ctx.plugin(DesktopController, { title: 'dsh Desktop' })
 
     await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, {
@@ -114,6 +121,46 @@ describe('DesktopController', () => {
 
     await settingsFiber.dispose()
     expect(ctx.get('desktop')).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('removes legacy shortcut toggles while preserving current settings', async () => {
+    const ctx = new Context()
+    provideWebServer(ctx)
+    await ctx.plugin(MemorySettings).await()
+    const settings = ctx.settings as MemorySettings
+    settings.seed(DESKTOP_SETTINGS_NAMESPACE, {
+      closeToTray: false,
+      shortcuts: { desktop: true, login: true },
+    })
+
+    await ctx.plugin(DesktopController, {})
+    await vi.waitFor(() => {
+      expect(ctx.settings.describe().find(({ ns }) => ns === DESKTOP_SETTINGS_NAMESPACE)?.user).toEqual({
+        closeToTray: false,
+        shortcuts: { login: true },
+      })
+    })
+    expect(ctx.desktop.current().shortcuts).toEqual({ login: true })
+    await ctx.fiber.dispose()
+  })
+
+  it('contains legacy settings migration failures', async () => {
+    const ctx = new Context()
+    provideWebServer(ctx)
+    await ctx.plugin(MemorySettings).await()
+    const settings = ctx.settings as MemorySettings
+    settings.seed(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { appMenu: true } })
+    vi.spyOn(settings, 'mutate').mockRejectedValueOnce(new Error('read-only document'))
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+
+    await ctx.plugin(DesktopController, {})
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(
+        'dsh-desktop: legacy shortcut settings migration failed: %o',
+        expect.objectContaining({ message: 'read-only document' }),
+      )
+    })
     await ctx.fiber.dispose()
   })
 

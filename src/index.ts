@@ -6,7 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { installSettingsSection, settingsNamespace, type SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -27,6 +27,7 @@ declare module '@deepseek-ai/cordis' {
 /** Settings namespace owned by the desktop shell. */
 export const DESKTOP_SETTINGS_NAMESPACE = settingsNamespace('desktop')
 const LOCALE_SETTINGS_NAMESPACE = settingsNamespace('locale')
+const LEGACY_SHORTCUT_KEYS = ['desktop', 'appMenu'] as const
 
 /** Resolve dsh's supported locale preference for native shell strings. */
 export function desktopLocale(value: unknown): DesktopLocale {
@@ -83,6 +84,7 @@ export class DesktopController extends Service {
   private session: DesktopSession | undefined
   private shortcutSync: Promise<void> = Promise.resolve()
   private locale: DesktopLocale
+  private legacyMigrationStarted = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'desktop')
@@ -98,10 +100,17 @@ export class DesktopController extends Service {
     })
     installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
       setSource: current => { this.source = current as () => ResolvedConfig },
-      onChange: () => { void this.queueShortcutSync('login', this.current().shortcuts.login) },
+      onChange: () => {
+        void this.queueShortcutSync('login', this.current().shortcuts.login)
+        if (this.legacyMigrationStarted) return
+        this.legacyMigrationStarted = true
+        void migrateLegacyShortcutSettings(ctx).catch(error => {
+          ctx.logger.warn('dsh-desktop: legacy shortcut settings migration failed: %o', error)
+        })
+      },
     })
     ctx.effect(() => ctx.webServer.register(createDesktopSettingsRoute({
-      read: () => this.current().shortcuts,
+      read: () => ({ login: this.current().shortcuts.login }),
       create: async (target: ShortcutCreateTarget) => { await this.queueShortcutSync(target, true) },
       setLogin: async enabled => { await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: enabled } }) },
     }, `127.0.0.1:${String(ctx.webServer.port)}`)), 'dsh-desktop: settings route')
@@ -151,6 +160,20 @@ export class DesktopController extends Service {
     })
     return operation
   }
+}
+
+/** Remove the two pre-1.0 shortcut toggles without rewriting unrelated settings. */
+async function migrateLegacyShortcutSettings(ctx: Context): Promise<void> {
+  const user = ctx.settings.describe().find(descriptor => descriptor.ns === DESKTOP_SETTINGS_NAMESPACE)?.user as
+    | { shortcuts?: Record<string, unknown> }
+    | undefined
+  const shortcuts = user?.shortcuts
+  if (shortcuts === undefined) return
+  const ops: SettingsPathOp[] = LEGACY_SHORTCUT_KEYS
+    .filter(key => Object.hasOwn(shortcuts, key))
+    .map(key => ({ op: 'unset', path: ['shortcuts', key] }))
+  if (ops.length === 0) return
+  await ctx.settings.mutate(DESKTOP_SETTINGS_NAMESPACE, ops)
 }
 
 export default DesktopController
