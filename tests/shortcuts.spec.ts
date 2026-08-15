@@ -14,6 +14,7 @@ import {
   launchAgent,
   reconcileShortcuts,
   shortcutPaths,
+  windowsLauncherArguments,
   type LaunchCommand,
 } from '../src/shortcuts.js'
 
@@ -52,6 +53,14 @@ describe('shortcut serialization', () => {
     expect(agent).toContain('tool&lt;&amp;')
     expect(agent).toContain('a&amp;b')
   })
+
+  it('quotes every argument passed through the Windows launcher', () => {
+    const argumentsString = windowsLauncherArguments(command)
+    expect(argumentsString).toContain('windows-launcher.vbs" "C:\\Users\\test"')
+    expect(argumentsString).toContain('"C:\\Program Files\\dsh\\dsh.exe"')
+    expect(argumentsString).toMatch(/"--profile" "desktop" "--title" "A \\"quoted\\" title"$/)
+    expect(windowsLauncherArguments({ ...command, cwd: 'C:\\' })).toContain('"C:\\\\"')
+  })
 })
 
 describe('windows shortcut creation', () => {
@@ -63,7 +72,16 @@ describe('windows shortcut creation', () => {
     child.emit('exit', 0)
     await expect(pending).resolves.toBeUndefined()
     expect(spawnMock).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.objectContaining({ windowsHide: true }))
-    expect(spawnMock.mock.calls[0]?.[1]).toContain('[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[Console]::OutputEncoding; $s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; $l=$s.CreateShortcut($j.path); $l.TargetPath=$j.executable; $l.Arguments=$j.arguments; $l.WorkingDirectory=$j.cwd; $l.Description="DeepSeek Harness"; $l.Save()')
+    const script = (spawnMock.mock.calls[0]?.[1] as string[]).at(-1)
+    expect(script).toContain('$l.TargetPath=(Join-Path $env:SystemRoot "System32\\wscript.exe")')
+    expect(script).toContain('$l.IconLocation=$j.icon')
+    const options = spawnMock.mock.calls[0]?.[2] as { env: Record<string, string> }
+    expect(JSON.parse(options.env.DSH_SHORTCUT_JSON as string)).toEqual({
+      path: 'C:\\Desktop\\dsh.lnk',
+      arguments: windowsLauncherArguments(command),
+      cwd: command.cwd,
+      icon: expect.stringMatching(/dsh-desktop\.ico,0$/),
+    })
   })
 
   it('reports process errors and non-zero exits including stderr', async () => {

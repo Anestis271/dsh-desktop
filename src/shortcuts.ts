@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { ShortcutSettings } from './index.js'
 
 /** Canonical launch command stored in user-level shortcuts. */
@@ -28,6 +29,8 @@ export interface ShortcutPaths {
 
 const MARKER = 'dsh-desktop-owned-v1'
 const PRODUCT = 'DeepSeek Harness'
+const ICON_ICO_PATH = fileURLToPath(new URL('../assets/dsh-desktop.ico', import.meta.url))
+const WINDOWS_LAUNCHER_PATH = fileURLToPath(new URL('../assets/windows-launcher.vbs', import.meta.url))
 
 /** Resolve user-level shortcut locations without creating any directories. */
 export function shortcutPaths(platform: NodeJS.Platform, home: string = homedir()): ShortcutPaths {
@@ -54,6 +57,17 @@ export function shortcutPaths(platform: NodeJS.Platform, home: string = homedir(
 
 function quoteExec(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+}
+
+function quoteWindowsArgument(value: string): string {
+  return `"${value.replaceAll(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`
+}
+
+/** Pass the launch command to the packaged console-free Windows bridge. */
+export function windowsLauncherArguments(command: LaunchCommand): string {
+  return [WINDOWS_LAUNCHER_PATH, command.cwd, command.executable, ...command.args]
+    .map(quoteWindowsArgument)
+    .join(' ')
 }
 
 /** Serialize a launch command using freedesktop Exec quoting. */
@@ -100,11 +114,20 @@ async function removeOwned(path: string): Promise<void> {
 export async function createWindowsShortcut(path: string, command: LaunchCommand): Promise<void> {
   const script = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[Console]::OutputEncoding; '
     + '$s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; '
-    + '$l=$s.CreateShortcut($j.path); $l.TargetPath=$j.executable; $l.Arguments=$j.arguments; '
-    + '$l.WorkingDirectory=$j.cwd; $l.Description="DeepSeek Harness"; $l.Save()'
+    + '$l=$s.CreateShortcut($j.path); $l.TargetPath=(Join-Path $env:SystemRoot "System32\\wscript.exe"); '
+    + '$l.Arguments=$j.arguments; $l.WorkingDirectory=$j.cwd; $l.IconLocation=$j.icon; '
+    + '$l.Description="DeepSeek Harness"; $l.Save()'
   const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
     windowsHide: true,
-    env: { ...process.env, DSH_SHORTCUT_JSON: JSON.stringify({ path, executable: command.executable, arguments: command.args.join(' '), cwd: command.cwd }) },
+    env: {
+      ...process.env,
+      DSH_SHORTCUT_JSON: JSON.stringify({
+        path,
+        arguments: windowsLauncherArguments(command),
+        cwd: command.cwd,
+        icon: `${ICON_ICO_PATH},0`,
+      }),
+    },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   await new Promise<void>((resolve, reject) => {

@@ -43,7 +43,7 @@ desktop:
 
 The settings are applied live. `desktop` creates a Desktop icon, `appMenu` creates a Windows Start Menu, macOS Applications, or Linux application-menu entry, and `login` creates a per-user startup entry. On Windows, for example, setting `desktop: true` creates `Desktop\DeepSeek Harness.lnk`; double-click it to run the same operation as `dsh --profile desktop`.
 
-Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application.
+Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application. Windows entries use the packaged multi-resolution icon and a `wscript.exe` bridge that launches the same command with its console window hidden.
 
 The `desktop` namespace remains owned and persisted by dsh's settings provider. Because dsh `0.1.0-rc.6` does not expose third-party namespaces through `settings.describe`, the General-settings contribution uses one guarded same-origin route on the existing dsh Web server. The route accepts only the three shortcut booleans, binds to the active loopback authority, and is removed with the plugin lifecycle; it does not start another server.
 

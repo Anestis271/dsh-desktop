@@ -166,7 +166,7 @@ dsh --profile desktop
 
 平台实现：
 
-- Windows：用户级桌面/开始菜单 `.lnk`；不写系统级目录。
+- Windows：用户级桌面/开始菜单 `.lnk`，显式引用插件的多尺寸 `.ico`；通过随包提供的 `wscript.exe` 薄桥接层隐藏 Node 控制台窗口，不写系统级目录。
 - Linux：用户级 freedesktop `.desktop` 文件，正确转义 `Exec` 并按需设置 executable bit。
 - macOS：用户级、无需重新签名的快捷入口或 alias；不伪造已签名 `.app` bundle。
 - 登录启动：仅在用户显式开启时，通过平台推荐的用户级机制调用同一 dsh 命令。
