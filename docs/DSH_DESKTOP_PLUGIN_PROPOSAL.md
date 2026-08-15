@@ -31,7 +31,7 @@ dsh --profile desktop
 4. 设置 schema、默认值、作用域、迁移和变更监听 API。
 5. profile 数据目录、日志 API、资源解析和插件卸载钩子。
 
-若 dsh 没有正式提供某项能力，应先向 dsh 增加最小的通用插件 API，而不是在插件内读取内部文件、解析控制台文本或依赖未公开实现。
+若 dsh 没有正式提供某项能力，应优先向 dsh 增加最小的通用插件 API。无法同步升级宿主时，兼容层只能组合 dsh 已公开的服务接口，并明确删除条件；不得读取内部文件、解析控制台文本或依赖未公开实现。
 
 ## 3. 推荐技术路线
 
@@ -156,7 +156,7 @@ Electron 是独立的子进程 runtime，不应由 dsh 的 Node 进程隐式加�
 }
 ```
 
-`desktop` 是插件设置命名空间，`shortcuts` 是其嵌套配置对象；具体 schema 类型、设置 UI 展示和迁移规则必须由 dsh 的设置 API 注册，不能把这些字段写入 profile patch。所有选项默认 `false`。启用任何入口后，该入口唯一执行：
+`desktop` 是插件设置命名空间，`shortcuts` 是其嵌套配置对象；具体 schema 类型、持久化和变更监听由 dsh 的设置 API 注册，不能把这些字段写入 profile patch。所有选项默认 `false`。dsh `0.1.0-rc.6` 的 `settings.describe` 会过滤第三方命名空间，因此设置行通过官方 `settings.general.item` slot 注入，并使用现有 dsh Web server 上的同源精确路由读写这三个布尔值；路由校验 loopback Host、Origin、方法、媒体类型、请求大小和字段，不启动第二个服务。待 dsh 支持插件声明可公开命名空间后，应直接切回官方 settings transport。启用任何入口后，该入口唯一执行：
 
 ```bash
 dsh --profile desktop

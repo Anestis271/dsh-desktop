@@ -15,7 +15,7 @@ pnpm run check          # build followed by the coverage gate
 pnpm pack --dry-run     # inspect the published file list
 ```
 
-The local smoke test installs the package into a profile with `dsh plugin --profile desktop add .`, then starts it with `dsh --profile desktop`.
+The local smoke test packs to a temporary directory, installs that tarball with `dsh plugin --profile desktop add <tarball>`, then starts it with `dsh --profile desktop`. Do not smoke-test with `add .`; its checkout link can resolve development copies of host peers.
 
 ## Coding and Documentation Style
 

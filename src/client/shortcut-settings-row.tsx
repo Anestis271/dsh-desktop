@@ -1,9 +1,9 @@
 import React from 'react'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DesktopSettingsKey } from './locales.js'
 import styles from './shortcut-settings-row.module.css'
+import type { DesktopSettingsSnapshot } from './desktop-settings-store.js'
 
 export interface ClientShortcutSettings {
   desktop: boolean
@@ -18,7 +18,7 @@ export interface DesktopClientSettings {
 export interface ShortcutSettingsRowInjected {
   hooks: {
     desktopSettings: {
-      getSnapshot(): SettingsScopeSnapshot<DesktopClientSettings>
+      getSnapshot(): DesktopSettingsSnapshot
       subscribe(listener: () => void): () => void
     }
   }

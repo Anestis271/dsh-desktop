@@ -13,6 +13,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
 import { reconcileShortcuts, type LaunchCommand } from './shortcuts.js'
 import type { DesktopLocale } from './protocol.js'
+import { createDesktopSettingsRoute } from './settings-route.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -103,6 +104,12 @@ export class DesktopController extends Service {
       setSource: current => { this.source = current as () => ResolvedConfig },
       onChange: () => { this.queueShortcutSync() },
     })
+    ctx.effect(() => ctx.webServer.register(createDesktopSettingsRoute({
+      read: () => this.current().shortcuts,
+      write: async (key, enabled) => {
+        await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { [key]: enabled } })
+      },
+    }, `127.0.0.1:${String(ctx.webServer.port)}`)), 'dsh-desktop: settings route')
     this.queueShortcutSync()
     ctx.effect(async () => {
       const current = this.current()

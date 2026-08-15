@@ -15,5 +15,5 @@
     "outDir": "lib/types/client",
     "skipLibCheck": true
   },
-  "include": ["src/client/**/*.tsx", "src/client/**/*.d.ts"]
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/client/**/*.d.ts"]
 }

@@ -1,5 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, desktopLocale, internals } from '../src/index.js'
 
@@ -20,8 +23,10 @@ class MemorySettings extends SettingsProvider {
   }
 }
 
-function provideWebServer(ctx: Context): void {
-  ctx.provide('webServer', { host: '127.0.0.1', port: 3080 } as never)
+function provideWebServer(ctx: Context): ReturnType<typeof vi.fn> {
+  const register = vi.fn(() => vi.fn())
+  ctx.provide('webServer', { host: '127.0.0.1', port: 3080, register } as never)
+  return register
 }
 
 describe('DesktopController', () => {
@@ -40,16 +45,26 @@ describe('DesktopController', () => {
 
   it('applies lightweight defaults from an empty settings document', async () => {
     const ctx = new Context()
-    provideWebServer(ctx)
+    const registerRoute = provideWebServer(ctx)
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin(DesktopController, {})
 
     expect(ctx.settings.describe().map(({ ns }) => ns)).toContain(DESKTOP_SETTINGS_NAMESPACE)
+    expect(registerRoute).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'exact', path: '/dsh-desktop/settings',
+    }))
+    const route = registerRoute.mock.calls[0]?.[0] as WebRoute
+    const request = Readable.from([JSON.stringify({ key: 'login', enabled: true })]) as IncomingMessage
+    request.method = 'POST'
+    request.headers = { host: '127.0.0.1:3080', 'content-type': 'application/json' }
+    const response = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() } as unknown as ServerResponse
+    await route.handler(request, response)
+    expect(ctx.desktop.current().shortcuts.login).toBe(true)
     expect(ctx.desktop.current()).toEqual({
       closeToTray: true,
       startHidden: false,
       title: 'DeepSeek Harness',
-      shortcuts: { desktop: false, appMenu: false, login: false },
+      shortcuts: { desktop: false, appMenu: false, login: true },
     })
     await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenCalledWith(
       { desktop: false, appMenu: false, login: false },
