@@ -119,6 +119,7 @@ export class DesktopController extends Service {
         profileDir: dshHomePath('profiles', 'desktop'),
         locale: this.locale,
         config: current,
+        relaunch: desktopLaunchCommand(),
       }
       const session = await internals.launch(options)
       this.session = session

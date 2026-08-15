@@ -70,6 +70,14 @@ export function windowsLauncherArguments(command: LaunchCommand): string {
     .join(' ')
 }
 
+/** Build the command Windows stores when pinning the running taskbar button. */
+export function windowsRelaunchCommand(
+  command: LaunchCommand,
+  systemRoot: string = process.env.SystemRoot ?? 'C:\\Windows',
+): string {
+  return `${quoteWindowsArgument(join(systemRoot, 'System32', 'wscript.exe'))} ${windowsLauncherArguments(command)}`
+}
+
 /** Serialize a launch command using freedesktop Exec quoting. */
 export function desktopEntry(command: LaunchCommand): string {
   const args = [command.executable, ...command.args].map(quoteExec).join(' ')

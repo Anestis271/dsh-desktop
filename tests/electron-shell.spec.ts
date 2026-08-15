@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProcessBridge, createStreamBridge, desktopIconPath, isThemeColor, runElectronShell, titleBarSymbolColor, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike } from '../src/electron-shell.js'
+import { createProcessBridge, createStreamBridge, desktopIconPath, isThemeColor, runElectronShell, titleBarSymbolColor, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike, type WindowsAppDetails } from '../src/electron-shell.js'
 
 class FakeBridge implements ProcessBridge {
   private readonly listeners = new Set<(message: unknown) => void>()
@@ -44,6 +44,7 @@ class FakeWindow implements BrowserWindowLike {
   loaded = ''
   title = ''
   loading: Promise<void> = Promise.resolve()
+  appDetails: WindowsAppDetails[] = []
   overlay: { color: string; symbolColor: string; height: number }[] = []
   readonly webContents = {
     listeners: [] as Array<(event: unknown, channel: string, ...args: unknown[]) => void>,
@@ -62,6 +63,7 @@ class FakeWindow implements BrowserWindowLike {
   reload(): void { this.calls.push('reload') }
   isVisible(): boolean { return this.visible }
   setTitle(title: string): void { this.title = title }
+  setAppDetails(options: WindowsAppDetails): void { this.appDetails.push(options) }
   setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void { this.overlay.push(options) }
   on(event: string, listener: (...args: never[]) => void): void { this.events.set(event, listener) }
   emit(event: string, ...args: never[]): void { this.events.get(event)?.(...args) }
@@ -122,6 +124,7 @@ const init = {
     title: 'dsh Desktop',
     shortcuts: { desktop: false, appMenu: false, login: false },
   },
+  relaunch: { executable: 'node.exe', args: ['dsh.js', '--profile', 'desktop'], cwd: 'C:/work' },
 }
 
 describe('Electron shell', () => {
@@ -141,6 +144,13 @@ describe('Electron shell', () => {
     expect(setupResult.bridge.sent).toEqual([{ type: 'ready' }])
     expect(setupResult.app.appUserModelId).toBe('com.anestis.dsh-desktop')
     expect(setupResult.api.nativeImage.createFromPath).toHaveBeenCalledWith(expect.stringMatching(/dsh-desktop\.ico$/))
+    expect(window.appDetails).toEqual([{
+      appId: 'com.anestis.dsh-desktop',
+      appIconPath: expect.stringMatching(/dsh-desktop\.ico$/),
+      appIconIndex: 0,
+      relaunchCommand: expect.stringMatching(/wscript\.exe.*windows-launcher\.vbs.*node\.exe.*--profile.*desktop/),
+      relaunchDisplayNameResource: 'dsh Desktop',
+    }])
     window.webContents.emit('dsh-desktop-theme', '#ffffff')
     window.webContents.emit('dsh-desktop-theme', 'url(javascript:bad)')
     expect(window.overlay).toEqual([{ color: '#ffffff', symbolColor: '#111827', height: 36 }])
@@ -213,6 +223,7 @@ describe('Electron shell', () => {
     setupResult.bridge.emit(init)
     await pending
     expect(setupResult.app.appUserModelId).toBe('')
+    expect(setupResult.windows[0].appDetails).toEqual([])
     setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
     expect(setupResult.windows[0].overlay).toEqual([])
   })

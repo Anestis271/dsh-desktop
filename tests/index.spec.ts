@@ -71,6 +71,9 @@ describe('DesktopController', () => {
       { desktop: false, appMenu: false, login: false },
       expect.objectContaining({ platform: process.platform, home: homedir() }),
     ) })
+    expect(internals.launch).toHaveBeenCalledWith(expect.objectContaining({
+      relaunch: desktopLaunchCommand(),
+    }))
     await ctx.fiber.dispose()
   })
 

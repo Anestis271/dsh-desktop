@@ -49,6 +49,7 @@ const options: DesktopLaunchOptions = {
   profileDir: 'C:/profile',
   locale: 'en',
   config,
+  relaunch: { executable: 'node.exe', args: ['dsh.js', '--profile', 'desktop'], cwd: 'C:/work' },
 }
 
 function dependencies(child: FakeChild): RuntimeDependencies {
@@ -88,6 +89,11 @@ describe('runtime protocol guards', () => {
     expect(isRuntimeInitMessage(null)).toBe(false)
     expect(isRuntimeInitMessage({ type: 'init', ...options, url: 1 })).toBe(false)
     expect(isRuntimeInitMessage({ type: 'init', ...options, config: { ...config, shortcuts: {} } })).toBe(false)
+    expect(isRuntimeInitMessage({ type: 'init', ...options, relaunch: null })).toBe(false)
+    expect(isRuntimeInitMessage({ type: 'init', ...options, relaunch: { ...options.relaunch, executable: 1 } })).toBe(false)
+    expect(isRuntimeInitMessage({ type: 'init', ...options, relaunch: { ...options.relaunch, args: 'bad' } })).toBe(false)
+    expect(isRuntimeInitMessage({ type: 'init', ...options, relaunch: { ...options.relaunch, args: [1] } })).toBe(false)
+    expect(isRuntimeInitMessage({ type: 'init', ...options, relaunch: { ...options.relaunch, cwd: 1 } })).toBe(false)
     expect(isRuntimeShutdownMessage({ type: 'shutdown', extra: true })).toBe(true)
     expect(isRuntimeShutdownMessage({ type: 'stop' })).toBe(false)
     expect(isRuntimeLocaleMessage({ type: 'locale', locale: 'fr' })).toBe(false)

@@ -15,6 +15,7 @@ import {
   reconcileShortcuts,
   shortcutPaths,
   windowsLauncherArguments,
+  windowsRelaunchCommand,
   type LaunchCommand,
 } from '../src/shortcuts.js'
 
@@ -60,6 +61,14 @@ describe('shortcut serialization', () => {
     expect(argumentsString).toContain('"C:\\Program Files\\dsh\\dsh.exe"')
     expect(argumentsString).toMatch(/"--profile" "desktop" "--title" "A \\"quoted\\" title"$/)
     expect(windowsLauncherArguments({ ...command, cwd: 'C:\\' })).toContain('"C:\\\\"')
+    expect(windowsRelaunchCommand(command, 'C:\\Windows')).toMatch(/^"C:\\Windows\\System32\\wscript\.exe" /)
+    const systemRoot = process.env.SystemRoot
+    delete process.env.SystemRoot
+    try {
+      expect(windowsRelaunchCommand(command)).toMatch(/^"C:\\Windows\\System32\\wscript\.exe" /)
+    } finally {
+      if (systemRoot !== undefined) process.env.SystemRoot = systemRoot
+    }
   })
 })
 

@@ -171,6 +171,8 @@ dsh --profile desktop
 - macOS：用户级、无需重新签名的快捷入口或 alias；不伪造已签名 `.app` bundle。
 - 登录启动：仅在用户显式开启时，通过平台推荐的用户级机制调用同一 dsh 命令。
 
+Windows 运行窗口还应通过 `BrowserWindow.setAppDetails()` 发布与 `.lnk` 一致的 AppUserModelID、图标、显示名和隐藏 relaunch command，防止任务栏把未打包的宿主 `electron.exe` 固定为应用入口。
+
 设置变化触发一次性 reconcile。插件为创建的入口写入稳定标识和版本信息；关闭设置或卸载时只删除由本插件创建且标识匹配的入口，不删除用户自行创建的同名文件。失败应记录到 dsh 日志并在设置 UI 返回可操作错误，不阻止主窗口启动。
 
 用户可直接在官方 WebUI 设置页启用这些选项，或编辑用户级 `~/.dsh/settings.yaml`（Windows 对应 `C:\Users\<用户名>\.dsh\settings.yaml`）。设置变更实时生效：`desktop` 创建桌面图标，`appMenu` 创建开始菜单、Applications 或 freedesktop 应用菜单入口，`login` 创建当前用户的登录启动入口。例如 Windows 上启用 `desktop: true` 后会生成 `Desktop\DeepSeek Harness.lnk`，双击等效于执行 `dsh --profile desktop`。这些入口只引用当前运行中的 Node 与 dsh 入口，不复制或签名独立应用程序。

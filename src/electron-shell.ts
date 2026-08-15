@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLocale, RuntimeChildMessage, RuntimeParentMessage, RuntimeInitMessage } from './protocol.js'
 import { isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from './protocol.js'
+import { windowsRelaunchCommand } from './shortcuts.js'
 
 /** Minimal event object used by BrowserWindow close handlers. */
 export interface CloseEventLike {
@@ -17,11 +18,21 @@ export interface BrowserWindowLike {
   reload(): void
   isVisible(): boolean
   setTitle(title: string): void
+  setAppDetails(options: WindowsAppDetails): void
   setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void
   webContents: {
     on(event: 'ipc-message', listener: (event: unknown, channel: string, ...args: unknown[]) => void): void
   }
   on(event: string, listener: (...args: never[]) => void): void
+}
+
+/** Windows taskbar identity and relaunch metadata for an unpackaged window. */
+export interface WindowsAppDetails {
+  appId: string
+  appIconPath: string
+  appIconIndex: number
+  relaunchCommand: string
+  relaunchDisplayNameResource: string
 }
 
 /** Tray operations consumed by the shell. */
@@ -94,6 +105,7 @@ export interface StreamLike {
 const PRELOAD_PATH = fileURLToPath(new URL('./electron-preload.cjs', import.meta.url))
 const ICON_PNG_PATH = fileURLToPath(new URL('../assets/dsh-desktop.png', import.meta.url))
 const ICON_ICO_PATH = fileURLToPath(new URL('../assets/dsh-desktop.ico', import.meta.url))
+const WINDOWS_APP_ID = 'com.anestis.dsh-desktop'
 
 /** Select the native multi-resolution format where Windows shell surfaces need it. */
 export function desktopIconPath(platform: NodeJS.Platform = process.platform): string {
@@ -187,7 +199,7 @@ export async function runElectronShell(
 ): Promise<void> {
   const init = await waitForInit(bridge)
   api.app.setName(init.config.title)
-  if (platform === 'win32') api.app.setAppUserModelId('com.anestis.dsh-desktop')
+  if (platform === 'win32') api.app.setAppUserModelId(WINDOWS_APP_ID)
   api.app.setPath('userData', join(init.profileDir, 'desktop-shell'))
   if (!api.app.requestSingleInstanceLock({ profileDir: init.profileDir })) {
     bridge.send({ type: 'duplicate' })
@@ -258,6 +270,15 @@ export async function runElectronShell(
     },
   })
   window.setTitle(init.config.title)
+  if (platform === 'win32') {
+    window.setAppDetails({
+      appId: WINDOWS_APP_ID,
+      appIconPath: ICON_ICO_PATH,
+      appIconIndex: 0,
+      relaunchCommand: windowsRelaunchCommand(init.relaunch),
+      relaunchDisplayNameResource: init.config.title,
+    })
+  }
   window.webContents.on('ipc-message', (_event, channel, ...args) => {
     if (channel !== 'dsh-desktop-theme' || !isThemeColor(args[0]) || platform === 'darwin') return
     window?.setTitleBarOverlay({ color: args[0], symbolColor: titleBarSymbolColor(args[0]), height: 36 })

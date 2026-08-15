@@ -9,6 +9,7 @@ import { downloadArtifact } from '@electron/get'
 import extract from 'extract-zip'
 import type { ResolvedConfig } from './index.js'
 import { isRuntimeChildMessage, type DesktopLocale, type RuntimeInitMessage, type RuntimeParentMessage } from './protocol.js'
+import type { LaunchCommand } from './shortcuts.js'
 
 /** Values the dsh host passes to the Electron child. */
 export interface DesktopLaunchOptions {
@@ -16,6 +17,7 @@ export interface DesktopLaunchOptions {
   profileDir: string
   locale: DesktopLocale
   config: ResolvedConfig
+  relaunch: LaunchCommand
 }
 
 /** A launched Electron child owned by one dsh plugin fiber. */
