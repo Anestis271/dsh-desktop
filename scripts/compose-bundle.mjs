@@ -27,7 +27,7 @@ const desktopPatch = `
 - insert:
     - id: desktop
       name: '@anestis/dsh-desktop'
-      inject: [webServer]
+      inject: [webServer, settings]
 `
 
 await writeFile(fileURLToPath(outputUrl), `${webPatch.trimEnd()}${desktopPatch}`)

@@ -443,4 +443,4 @@
 - insert:
     - id: desktop
       name: '@anestis/dsh-desktop'
-      inject: [webServer]
+      inject: [webServer, settings]

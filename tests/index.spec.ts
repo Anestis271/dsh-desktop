@@ -38,9 +38,10 @@ describe('DesktopController', () => {
     internals.reconcileShortcuts = originalReconcile
   })
 
-  it('applies lightweight defaults without a settings provider', async () => {
+  it('applies lightweight defaults from an empty settings document', async () => {
     const ctx = new Context()
     provideWebServer(ctx)
+    await ctx.plugin(MemorySettings).await()
     await ctx.plugin(DesktopController, {})
 
     expect(ctx.desktop.current()).toEqual({
@@ -56,7 +57,7 @@ describe('DesktopController', () => {
     await ctx.fiber.dispose()
   })
 
-  it('tracks the desktop user-settings namespace and returns detached values', async () => {
+  it('tracks the desktop user-settings namespace until its provider detaches', async () => {
     const ctx = new Context()
     provideWebServer(ctx)
     const settingsFiber = ctx.plugin(MemorySettings)
@@ -81,13 +82,14 @@ describe('DesktopController', () => {
     ) })
 
     await settingsFiber.dispose()
-    expect(ctx.desktop.current().closeToTray).toBe(true)
+    expect(ctx.get('desktop')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
   it('requests dsh shutdown when another instance owns the profile UI', async () => {
     const ctx = new Context()
     provideWebServer(ctx)
+    await ctx.plugin(MemorySettings).await()
     const exit = vi.fn()
     ctx.provide('appExit', exit)
     internals.launch = vi.fn(async () => ({ duplicate: true, updateLocale: vi.fn(), stop: async () => {} }))
@@ -118,6 +120,7 @@ describe('DesktopController', () => {
   it('forwards live dsh locale changes to the native shell', async () => {
     const ctx = new Context()
     provideWebServer(ctx)
+    await ctx.plugin(MemorySettings).await()
     const updateLocale = vi.fn()
     internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale, stop: async () => {} }))
     await ctx.plugin(DesktopController, {})
