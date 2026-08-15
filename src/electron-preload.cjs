@@ -37,8 +37,13 @@ function installDragRegion() {
   const region = document.createElement('div')
   region.id = 'dsh-desktop-titlebar-drag-region'
   const style = document.createElement('style')
-  const right = process.argv.includes('--dsh-desktop-right-controls') ? '138px' : '0'
-  style.textContent = `#dsh-desktop-titlebar-drag-region{position:fixed;top:0;left:50%;right:${right};height:36px;z-index:2147483646;-webkit-app-region:drag;user-select:none}`
+  const rightControls = process.argv.includes('--dsh-desktop-right-controls')
+  const right = rightControls ? '138px' : '0'
+  const utilitiesClearance = rightControls
+    ? `header:has([data-slot='conversation.session.header.utilities']){padding-right:138px!important}`
+      + `header :has(>[data-slot='conversation.session.header.utilities']){position:relative;z-index:2147483647}`
+    : ''
+  style.textContent = `#dsh-desktop-titlebar-drag-region{position:fixed;top:0;left:50%;right:${right};height:36px;z-index:2147483646;-webkit-app-region:drag;user-select:none}${utilitiesClearance}`
   document.head.append(style)
   document.body.append(region)
   trackSidebarEdge(region)
