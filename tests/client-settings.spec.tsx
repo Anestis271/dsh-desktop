@@ -34,6 +34,9 @@ describe('desktop shortcut settings client', () => {
 
     expect(buttons).toHaveLength(2)
     expect(buttons.map(element => element.props.children)).toEqual(['Create', 'Create'])
+    expect(buttons.map(element => element.props['aria-label'])).toEqual([
+      'Create Desktop shortcut', 'Create Application menu',
+    ])
     buttons[0]?.props.onClick()
     buttons[1]?.props.onClick()
     expect(createShortcut.mock.calls).toEqual([['desktop'], ['appMenu']])

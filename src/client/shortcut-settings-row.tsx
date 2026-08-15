@@ -37,21 +37,42 @@ export function ShortcutSettingsRow({ t, useDesktopSettings, createShortcut, set
   const shortcuts = snapshot.value?.shortcuts ?? DEFAULT_SHORTCUTS
   const disabled = snapshot.status !== 'ready' || !snapshot.writable
   return (
-    <>
+    <div className={styles.group}>
       <div className={styles.row}>
-        <span className={styles.label}>{t('desktop')}</span>
-        <button type="button" className={styles.create} disabled={disabled} onClick={() => { createShortcut('desktop') }}>
+        <div className={styles.copy}>
+          <div className={styles.title}>{t('desktop')}</div>
+          <div className={styles.description}>{t('desktopDescription')}</div>
+        </div>
+        <button
+          type="button"
+          className={styles.create}
+          aria-label={`${t('create')} ${t('desktop')}`}
+          disabled={disabled}
+          onClick={() => { createShortcut('desktop') }}
+        >
           {t('create')}
         </button>
       </div>
       <div className={styles.row}>
-        <span className={styles.label}>{t('appMenu')}</span>
-        <button type="button" className={styles.create} disabled={disabled} onClick={() => { createShortcut('appMenu') }}>
+        <div className={styles.copy}>
+          <div className={styles.title}>{t('appMenu')}</div>
+          <div className={styles.description}>{t('appMenuDescription')}</div>
+        </div>
+        <button
+          type="button"
+          className={styles.create}
+          aria-label={`${t('create')} ${t('appMenu')}`}
+          disabled={disabled}
+          onClick={() => { createShortcut('appMenu') }}
+        >
           {t('create')}
         </button>
       </div>
       <div className={styles.row}>
-        <span className={styles.label}>{t('login')}</span>
+        <div className={styles.copy}>
+          <div className={styles.title}>{t('login')}</div>
+          <div className={styles.description}>{t('loginDescription')}</div>
+        </div>
         <button
           type="button"
           className={styles.switch}
@@ -64,6 +85,6 @@ export function ShortcutSettingsRow({ t, useDesktopSettings, createShortcut, set
           <span className={styles.thumb} />
         </button>
       </div>
-    </>
+    </div>
   )
 }
