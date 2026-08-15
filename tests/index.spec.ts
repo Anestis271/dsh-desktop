@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, desktopLocale, internals } from '../src/index.js'
+import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, desktopLocale, desktopWindowsActivation, internals } from '../src/index.js'
 
 class MemorySettings extends SettingsProvider {
   private document: Record<string, unknown> = {}
@@ -173,6 +173,11 @@ describe('desktopLaunchCommand', () => {
       executable: process.execPath,
       args: [process.argv[1], '--profile', 'desktop'],
       cwd: process.cwd(),
+    })
+    expect(desktopWindowsActivation('C:/profile')).toEqual({
+      electronPath: expect.stringMatching(/desktop-shell[\\/]electron/),
+      entryPath: expect.stringMatching(/electron-activate\.cjs$/),
+      profileDir: 'C:/profile',
     })
   })
 

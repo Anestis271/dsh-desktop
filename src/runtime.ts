@@ -87,6 +87,21 @@ export function electronExecutable(platform: NodeJS.Platform): string {
   }
 }
 
+/** Resolve the stable executable location for this plugin's Electron runtime. */
+export function electronRuntimePath(
+  profileDir: string,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string {
+  return join(
+    profileDir,
+    'desktop-shell',
+    'electron',
+    `${ELECTRON_VERSION}-${platform}-${arch}`,
+    electronExecutable(platform),
+  )
+}
+
 /** Resolve or atomically install the one platform runtime used by this profile. */
 export async function resolveElectronPath(
   profileDir: string,
@@ -95,7 +110,7 @@ export async function resolveElectronPath(
 ): Promise<string> {
   const relative = electronExecutable(platform)
   const destination = join(profileDir, 'desktop-shell', 'electron', `${ELECTRON_VERSION}-${platform}-${arch}`)
-  const executable = join(destination, relative)
+  const executable = electronRuntimePath(profileDir, platform, arch)
   if (existsSync(executable)) return executable
 
   await mkdir(dirname(destination), { recursive: true })

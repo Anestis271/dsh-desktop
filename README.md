@@ -43,7 +43,7 @@ desktop:
 
 The settings are applied live. `desktop` creates a Desktop icon, `appMenu` creates a Windows Start Menu, macOS Applications, or Linux application-menu entry, and `login` creates a per-user startup entry. On Windows, for example, setting `desktop: true` creates `Desktop\DeepSeek Harness.lnk`; double-click it to run the same operation as `dsh --profile desktop`.
 
-Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application. Windows entries use the packaged multi-resolution icon and a `wscript.exe` bridge that launches the same command with its console window hidden.
+Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application. Windows entries use the packaged multi-resolution icon and a `wscript.exe` bridge that launches the same command with its console window hidden. When that profile is already open, the bridge first runs a short-lived Electron activation probe; the existing window is shown through Electron's profile-scoped single-instance lock without booting a second dsh host. If no instance exists, the probe releases the lock and the bridge follows the normal dsh startup path.
 
 The `desktop` namespace remains owned and persisted by dsh's settings provider. Because dsh `0.1.0-rc.6` does not expose third-party namespaces through `settings.describe`, the General-settings contribution uses one guarded same-origin route on the existing dsh Web server. The route accepts only the three shortcut booleans, binds to the active loopback authority, and is removed with the plugin lifecycle; it does not start another server.
 
@@ -51,7 +51,7 @@ The `desktop` namespace remains owned and persisted by dsh's settings provider. 
 
 The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region between the live sidebar edge and the native caption buttons. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
 
-On Windows, the running window publishes an explicit taskbar identity with the packaged icon and a short profile-local `relaunch.vbs` command that starts `dsh --profile desktop` without a console. Pinning the running window therefore preserves the DeepSeek Harness name, icon, and profile entry point instead of pinning the bare Electron runtime.
+On Windows, the running window publishes an explicit taskbar identity with the packaged icon and a short profile-local `relaunch.vbs` command that activates the existing profile or starts `dsh --profile desktop` without a console. Pinning the running window therefore preserves the DeepSeek Harness name, icon, and profile entry point instead of pinning the bare Electron runtime.
 
 ## Development
 

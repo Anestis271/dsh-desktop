@@ -11,8 +11,9 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { homedir } from 'node:os'
-import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
-import { reconcileShortcuts, taskbarRelaunchCommand, type LaunchCommand } from './shortcuts.js'
+import { fileURLToPath } from 'node:url'
+import { electronRuntimePath, launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
+import { reconcileShortcuts, taskbarRelaunchCommand, type LaunchCommand, type WindowsActivation } from './shortcuts.js'
 import type { DesktopLocale } from './protocol.js'
 import { createDesktopSettingsRoute } from './settings-route.js'
 
@@ -120,7 +121,12 @@ export class DesktopController extends Service {
         profileDir,
         locale: this.locale,
         config: current,
-        relaunchCommand: await internals.prepareTaskbarRelaunch(process.platform, profileDir, desktopLaunchCommand()),
+        relaunchCommand: await internals.prepareTaskbarRelaunch(
+          process.platform,
+          profileDir,
+          desktopLaunchCommand(),
+          desktopWindowsActivation(profileDir),
+        ),
       }
       const session = await internals.launch(options)
       this.session = session
@@ -146,6 +152,7 @@ export class DesktopController extends Service {
         platform: process.platform,
         home: homedir(),
         command: desktopLaunchCommand(),
+        windowsActivation: desktopWindowsActivation(dshHomePath('profiles', 'desktop')),
       }))
       .catch(error => {
         this.ctx.logger.warn('dsh-desktop: shortcut reconciliation failed: %o', error)
@@ -172,5 +179,14 @@ export function desktopLaunchCommand(): LaunchCommand {
     executable: process.execPath,
     args: [process.argv[1] ?? 'dsh', '--profile', 'desktop'],
     cwd: process.cwd(),
+  }
+}
+
+/** Locate the fast existing-instance entry used by Windows shell launchers. */
+export function desktopWindowsActivation(profileDir: string): WindowsActivation {
+  return {
+    electronPath: electronRuntimePath(profileDir),
+    entryPath: fileURLToPath(new URL('./electron-activate.cjs', import.meta.url)),
+    profileDir,
   }
 }

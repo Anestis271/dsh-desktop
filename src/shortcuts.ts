@@ -12,12 +12,20 @@ export interface LaunchCommand {
   cwd: string
 }
 
+/** Existing-instance probe used by console-free Windows launchers. */
+export interface WindowsActivation {
+  electronPath: string
+  entryPath: string
+  profileDir: string
+}
+
 /** Platform inputs for shortcut reconciliation. */
 export interface ShortcutDependencies {
   platform: NodeJS.Platform
   home: string
   command: LaunchCommand
-  runWindowsShortcut?: (path: string, command: LaunchCommand) => Promise<void>
+  windowsActivation?: WindowsActivation
+  runWindowsShortcut?: (path: string, command: LaunchCommand, activation: WindowsActivation) => Promise<void>
 }
 
 /** All files owned by this plugin, including the ownership marker suffix. */
@@ -64,8 +72,16 @@ function quoteWindowsArgument(value: string): string {
 }
 
 /** Pass the launch command to the packaged console-free Windows bridge. */
-export function windowsLauncherArguments(command: LaunchCommand): string {
-  return [WINDOWS_LAUNCHER_PATH, command.cwd, command.executable, ...command.args]
+export function windowsLauncherArguments(command: LaunchCommand, activation: WindowsActivation): string {
+  return [
+    WINDOWS_LAUNCHER_PATH,
+    activation.electronPath,
+    activation.entryPath,
+    activation.profileDir,
+    command.cwd,
+    command.executable,
+    ...command.args,
+  ]
     .map(quoteWindowsArgument)
     .join(' ')
 }
@@ -75,9 +91,18 @@ function quoteVbs(value: string): string {
 }
 
 /** Serialize the profile-local script behind the short taskbar relaunch command. */
-export function windowsRelaunchScript(command: LaunchCommand): string {
+export function windowsRelaunchScript(command: LaunchCommand, activation: WindowsActivation): string {
   const parameters = command.args.map(quoteWindowsArgument).join(' ')
-  return `Option Explicit\r\nDim shell\r\nSet shell = CreateObject("Shell.Application")\r\n`
+  const activationCommand = [activation.electronPath, activation.entryPath, activation.profileDir]
+    .map(quoteWindowsArgument)
+    .join(' ')
+  return `Option Explicit\r\nDim fileSystem, runner, shell\r\n`
+    + `Set fileSystem = CreateObject("Scripting.FileSystemObject")\r\n`
+    + `If fileSystem.FileExists(${quoteVbs(activation.electronPath)}) Then\r\n`
+    + `  Set runner = CreateObject("WScript.Shell")\r\n`
+    + `  If runner.Run(${quoteVbs(activationCommand)}, 0, True) = 0 Then WScript.Quit 0\r\n`
+    + `End If\r\n`
+    + `Set shell = CreateObject("Shell.Application")\r\n`
     + `shell.ShellExecute ${quoteVbs(command.executable)}, ${quoteVbs(parameters)}, ${quoteVbs(command.cwd)}, "", 0\r\n`
 }
 
@@ -94,12 +119,13 @@ export async function taskbarRelaunchCommand(
   platform: NodeJS.Platform,
   profileDir: string,
   command: LaunchCommand,
+  activation: WindowsActivation,
   systemRoot?: string,
 ): Promise<string> {
   if (platform !== 'win32') return ''
   const scriptPath = join(profileDir, 'desktop-shell', 'relaunch.vbs')
   await ensureParent(scriptPath)
-  await writeFile(scriptPath, windowsRelaunchScript(command), { mode: 0o600 })
+  await writeFile(scriptPath, windowsRelaunchScript(command, activation), { mode: 0o600 })
   return windowsScriptHostCommand(scriptPath, systemRoot)
 }
 
@@ -144,7 +170,11 @@ async function removeOwned(path: string): Promise<void> {
 }
 
 /** Create one Windows `.lnk` through the user-level WScript.Shell API. */
-export async function createWindowsShortcut(path: string, command: LaunchCommand): Promise<void> {
+export async function createWindowsShortcut(
+  path: string,
+  command: LaunchCommand,
+  activation: WindowsActivation,
+): Promise<void> {
   const script = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[Console]::OutputEncoding; '
     + '$s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; '
     + '$l=$s.CreateShortcut($j.path); $l.TargetPath=(Join-Path $env:SystemRoot "System32\\wscript.exe"); '
@@ -156,7 +186,7 @@ export async function createWindowsShortcut(path: string, command: LaunchCommand
       ...process.env,
       DSH_SHORTCUT_JSON: JSON.stringify({
         path,
-        arguments: windowsLauncherArguments(command),
+        arguments: windowsLauncherArguments(command, activation),
         cwd: command.cwd,
         icon: `${ICON_ICO_PATH},0`,
       }),
@@ -185,8 +215,11 @@ export async function reconcileShortcuts(settings: ShortcutSettings, deps: Short
       continue
     }
     if (deps.platform === 'win32') {
+      if (deps.windowsActivation === undefined) {
+        throw new Error('dsh-desktop: Windows shortcut activation metadata is unavailable')
+      }
       await ensureParent(path)
-      await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command)
+      await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command, deps.windowsActivation)
       await writeFile(markerPath(path), MARKER, { mode: 0o600 })
     } else if (deps.platform === 'darwin' && key === 'login') {
       await writeOwned(path, launchAgent(deps.command))

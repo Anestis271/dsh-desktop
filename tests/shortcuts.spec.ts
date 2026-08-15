@@ -30,6 +30,11 @@ const command: LaunchCommand = {
   args: ['--profile', 'desktop', '--title', 'A "quoted" title'],
   cwd: 'C:\\Users\\test',
 }
+const activation = {
+  electronPath: 'C:\\profile\\electron.exe',
+  entryPath: 'C:\\plugin\\electron-activate.cjs',
+  profileDir: 'C:\\profile',
+}
 
 let roots: string[] = []
 afterEach(async () => {
@@ -58,13 +63,15 @@ describe('shortcut serialization', () => {
   })
 
   it('quotes every argument passed through the Windows launcher', () => {
-    const argumentsString = windowsLauncherArguments(command)
-    expect(argumentsString).toContain('windows-launcher.vbs" "C:\\Users\\test"')
+    const argumentsString = windowsLauncherArguments(command, activation)
+    expect(argumentsString).toContain('windows-launcher.vbs" "C:\\profile\\electron.exe"')
+    expect(argumentsString).toContain('electron-activate.cjs" "C:\\profile" "C:\\Users\\test"')
     expect(argumentsString).toContain('"C:\\Program Files\\dsh\\dsh.exe"')
     expect(argumentsString).toMatch(/"--profile" "desktop" "--title" "A \\"quoted\\" title"$/)
-    expect(windowsLauncherArguments({ ...command, cwd: 'C:\\' })).toContain('"C:\\\\"')
-    const script = windowsRelaunchScript(command)
+    expect(windowsLauncherArguments({ ...command, cwd: 'C:\\' }, activation)).toContain('"C:\\\\"')
+    const script = windowsRelaunchScript(command, activation)
     expect(script).toContain('CreateObject("Shell.Application")')
+    expect(script).toContain('runner.Run')
     expect(script).toContain('""A \\""quoted\\"" title""')
     expect(windowsScriptHostCommand('C:\\profile\\relaunch.vbs', 'C:\\Windows')).toBe(
       '"C:\\Windows\\System32\\wscript.exe" "C:\\profile\\relaunch.vbs"',
@@ -84,10 +91,10 @@ describe('shortcut serialization', () => {
   it('writes a short Windows taskbar relaunch script only on Windows', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-taskbar-'))
     roots.push(root)
-    const relaunch = await taskbarRelaunchCommand('win32', root, command, 'C:\\Windows')
+    const relaunch = await taskbarRelaunchCommand('win32', root, command, activation, 'C:\\Windows')
     expect(relaunch.length).toBeLessThan(260)
-    await expect(readFile(join(root, 'desktop-shell', 'relaunch.vbs'), 'utf8')).resolves.toBe(windowsRelaunchScript(command))
-    await expect(taskbarRelaunchCommand('linux', root, command)).resolves.toBe('')
+    await expect(readFile(join(root, 'desktop-shell', 'relaunch.vbs'), 'utf8')).resolves.toBe(windowsRelaunchScript(command, activation))
+    await expect(taskbarRelaunchCommand('linux', root, command, activation)).resolves.toBe('')
   })
 })
 
@@ -95,7 +102,7 @@ describe('windows shortcut creation', () => {
   it('resolves after PowerShell exits successfully', async () => {
     const child = new ProcessChild()
     spawnMock.mockReturnValue(child)
-    const pending = createWindowsShortcut('C:\\Desktop\\dsh.lnk', command)
+    const pending = createWindowsShortcut('C:\\Desktop\\dsh.lnk', command, activation)
     child.emit('spawn')
     child.emit('exit', 0)
     await expect(pending).resolves.toBeUndefined()
@@ -106,7 +113,7 @@ describe('windows shortcut creation', () => {
     const options = spawnMock.mock.calls[0]?.[2] as { env: Record<string, string> }
     expect(JSON.parse(options.env.DSH_SHORTCUT_JSON as string)).toEqual({
       path: 'C:\\Desktop\\dsh.lnk',
-      arguments: windowsLauncherArguments(command),
+      arguments: windowsLauncherArguments(command, activation),
       cwd: command.cwd,
       icon: expect.stringMatching(/dsh-desktop\.ico,0$/),
     })
@@ -115,20 +122,20 @@ describe('windows shortcut creation', () => {
   it('reports process errors and non-zero exits including stderr', async () => {
     const errorChild = new ProcessChild()
     spawnMock.mockReturnValue(errorChild)
-    const errorPending = createWindowsShortcut('x', command)
+    const errorPending = createWindowsShortcut('x', command, activation)
     errorChild.emit('error', new Error('powershell unavailable'))
     await expect(errorPending).rejects.toThrow('powershell unavailable')
 
     const failedChild = new ProcessChild()
     spawnMock.mockReturnValue(failedChild)
-    const failedPending = createWindowsShortcut('x', command)
+    const failedPending = createWindowsShortcut('x', command, activation)
     failedChild.stderr.emit('data', 'access denied')
     failedChild.emit('exit', 1)
     await expect(failedPending).rejects.toThrow('access denied')
 
     const noStderrChild = new ProcessChild()
     spawnMock.mockReturnValue(noStderrChild)
-    const noStderrPending = createWindowsShortcut('x', command)
+    const noStderrPending = createWindowsShortcut('x', command, activation)
     noStderrChild.emit('exit', 1)
     await expect(noStderrPending).rejects.toThrow('creation failed')
   })
@@ -170,6 +177,7 @@ describe('shortcut reconciliation', () => {
     const calls: string[] = []
     await reconcileShortcuts({ desktop: true, appMenu: true, login: true }, {
       platform: 'win32', home: root, command,
+      windowsActivation: activation,
       runWindowsShortcut: async path => {
         await expect(stat(dirname(path))).resolves.toBeTruthy()
         calls.push(path)
@@ -185,10 +193,19 @@ describe('shortcut reconciliation', () => {
     const paths = shortcutPaths('win32', root)
     const child = new ProcessChild()
     spawnMock.mockReturnValue(child)
-    const pending = reconcileShortcuts({ desktop: true, appMenu: false, login: false }, { platform: 'win32', home: root, command })
+    const pending = reconcileShortcuts({ desktop: true, appMenu: false, login: false }, {
+      platform: 'win32', home: root, command, windowsActivation: activation,
+    })
     await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledOnce() })
     child.emit('exit', 0)
     await expect(pending).resolves.toBeUndefined()
+  })
+
+  it('rejects enabled Windows shortcuts without activation metadata', async () => {
+    const root = await home()
+    await expect(reconcileShortcuts({ desktop: true, appMenu: false, login: false }, {
+      platform: 'win32', home: root, command,
+    })).rejects.toThrow(/activation metadata/)
   })
 
   it('propagates unexpected ownership-marker read failures', async () => {

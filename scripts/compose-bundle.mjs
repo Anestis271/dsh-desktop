@@ -42,3 +42,7 @@ await copyFile(
   fileURLToPath(new URL('../src/electron-entry.cjs', import.meta.url)),
   fileURLToPath(new URL('../lib/electron-entry.cjs', import.meta.url)),
 )
+await copyFile(
+  fileURLToPath(new URL('../src/electron-activate.cjs', import.meta.url)),
+  fileURLToPath(new URL('../lib/electron-activate.cjs', import.meta.url)),
+)

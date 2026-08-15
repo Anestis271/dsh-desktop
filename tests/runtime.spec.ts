@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
-import { electronExecutable, electronInternals, ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, runtimeInternals, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
+import { electronExecutable, electronInternals, electronRuntimePath, ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, runtimeInternals, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
   readonly sent: unknown[] = []
@@ -107,6 +107,9 @@ describe('runtime launcher', () => {
     expect(electronExecutable('freebsd')).toBe('electron')
     expect(electronExecutable('openbsd')).toBe('electron')
     expect(() => electronExecutable('aix')).toThrow(/unavailable/)
+    expect(electronRuntimePath('C:/profile', 'win32', 'x64')).toBe(
+      join('C:/profile', 'desktop-shell', 'electron', '43.4.0-win32-x64', 'electron.exe'),
+    )
   })
 
   it('installs one verified runtime atomically and reuses it', async () => {
