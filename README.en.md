@@ -1,11 +1,11 @@
-# dsh Desktop
+# DeepSeek Harness Desktop
 
 [简体中文](./README.md) | English
 
-[![npm version](https://img.shields.io/npm/v/%40anestis271%2Fdsh-desktop?style=flat-square&logo=npm)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
-[![npm downloads](https://img.shields.io/npm/dm/%40anestis271%2Fdsh-desktop?style=flat-square)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
-[![license](https://img.shields.io/npm/l/%40anestis271%2Fdsh-desktop?style=flat-square)](./LICENSE)
-![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square)
+[![npm version](https://img.shields.io/npm/v/%40anestis271%2Fdsh-desktop?logo=npm)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
+[![npm downloads](https://img.shields.io/npm/dm/%40anestis271%2Fdsh-desktop)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
+[![license](https://img.shields.io/npm/l/%40anestis271%2Fdsh-desktop)](./LICENSE)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555)
 
 Turn the official DeepSeek Harness WebUI into a natural desktop experience.
 
