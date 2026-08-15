@@ -1,5 +1,4 @@
 import type { ResolvedConfig } from './index.js'
-import type { LaunchCommand } from './shortcuts.js'
 
 export type DesktopLocale = 'zh' | 'en'
 
@@ -10,7 +9,7 @@ export interface RuntimeInitMessage {
   profileDir: string
   locale: DesktopLocale
   config: ResolvedConfig
-  relaunch: LaunchCommand
+  relaunchCommand: string
 }
 
 /** Parent-to-Electron shutdown request. */
@@ -65,14 +64,6 @@ function isResolvedConfig(value: unknown): value is ResolvedConfig {
     && isShortcutSettings(value.shortcuts)
 }
 
-function isLaunchCommand(value: unknown): value is LaunchCommand {
-  return isRecord(value)
-    && typeof value.executable === 'string'
-    && Array.isArray(value.args)
-    && value.args.every(argument => typeof argument === 'string')
-    && typeof value.cwd === 'string'
-}
-
 /** Validate an untrusted parent IPC value as the Electron startup payload. */
 export function isRuntimeInitMessage(value: unknown): value is RuntimeInitMessage {
   return isRecord(value)
@@ -81,7 +72,7 @@ export function isRuntimeInitMessage(value: unknown): value is RuntimeInitMessag
     && typeof value.profileDir === 'string'
     && (value.locale === 'zh' || value.locale === 'en')
     && isResolvedConfig(value.config)
-    && isLaunchCommand(value.relaunch)
+    && typeof value.relaunchCommand === 'string'
 }
 
 /** Validate an untrusted parent IPC value as a shutdown request. */

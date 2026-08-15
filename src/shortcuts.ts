@@ -70,12 +70,37 @@ export function windowsLauncherArguments(command: LaunchCommand): string {
     .join(' ')
 }
 
-/** Build the command Windows stores when pinning the running taskbar button. */
-export function windowsRelaunchCommand(
-  command: LaunchCommand,
+function quoteVbs(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`
+}
+
+/** Serialize the profile-local script behind the short taskbar relaunch command. */
+export function windowsRelaunchScript(command: LaunchCommand): string {
+  const parameters = command.args.map(quoteWindowsArgument).join(' ')
+  return `Option Explicit\r\nDim shell\r\nSet shell = CreateObject("Shell.Application")\r\n`
+    + `shell.ShellExecute ${quoteVbs(command.executable)}, ${quoteVbs(parameters)}, ${quoteVbs(command.cwd)}, "", 0\r\n`
+}
+
+/** Build a short WSH command that Windows can persist on a taskbar button. */
+export function windowsScriptHostCommand(
+  scriptPath: string,
   systemRoot: string = process.env.SystemRoot ?? 'C:\\Windows',
 ): string {
-  return `${quoteWindowsArgument(join(systemRoot, 'System32', 'wscript.exe'))} ${windowsLauncherArguments(command)}`
+  return [join(systemRoot, 'System32', 'wscript.exe'), scriptPath].map(quoteWindowsArgument).join(' ')
+}
+
+/** Prepare the platform-specific taskbar relaunch entry without an executable bundle. */
+export async function taskbarRelaunchCommand(
+  platform: NodeJS.Platform,
+  profileDir: string,
+  command: LaunchCommand,
+  systemRoot?: string,
+): Promise<string> {
+  if (platform !== 'win32') return ''
+  const scriptPath = join(profileDir, 'desktop-shell', 'relaunch.vbs')
+  await ensureParent(scriptPath)
+  await writeFile(scriptPath, windowsRelaunchScript(command), { mode: 0o600 })
+  return windowsScriptHostCommand(scriptPath, systemRoot)
 }
 
 /** Serialize a launch command using freedesktop Exec quoting. */

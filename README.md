@@ -51,7 +51,7 @@ The `desktop` namespace remains owned and persisted by dsh's settings provider. 
 
 The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region between the live sidebar edge and the native caption buttons. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
 
-On Windows, the running window publishes an explicit taskbar identity with the packaged icon and the same console-free `dsh --profile desktop` relaunch command used by shortcuts. Pinning the running window therefore preserves the DeepSeek Harness name, icon, and profile entry point instead of pinning the bare Electron runtime.
+On Windows, the running window publishes an explicit taskbar identity with the packaged icon and a short profile-local `relaunch.vbs` command that starts `dsh --profile desktop` without a console. Pinning the running window therefore preserves the DeepSeek Harness name, icon, and profile entry point instead of pinning the bare Electron runtime.
 
 ## Development
 

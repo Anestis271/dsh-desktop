@@ -14,8 +14,10 @@ import {
   launchAgent,
   reconcileShortcuts,
   shortcutPaths,
+  taskbarRelaunchCommand,
   windowsLauncherArguments,
-  windowsRelaunchCommand,
+  windowsRelaunchScript,
+  windowsScriptHostCommand,
   type LaunchCommand,
 } from '../src/shortcuts.js'
 
@@ -61,14 +63,31 @@ describe('shortcut serialization', () => {
     expect(argumentsString).toContain('"C:\\Program Files\\dsh\\dsh.exe"')
     expect(argumentsString).toMatch(/"--profile" "desktop" "--title" "A \\"quoted\\" title"$/)
     expect(windowsLauncherArguments({ ...command, cwd: 'C:\\' })).toContain('"C:\\\\"')
-    expect(windowsRelaunchCommand(command, 'C:\\Windows')).toMatch(/^"C:\\Windows\\System32\\wscript\.exe" /)
+    const script = windowsRelaunchScript(command)
+    expect(script).toContain('CreateObject("Shell.Application")')
+    expect(script).toContain('""A \\""quoted\\"" title""')
+    expect(windowsScriptHostCommand('C:\\profile\\relaunch.vbs', 'C:\\Windows')).toBe(
+      '"C:\\Windows\\System32\\wscript.exe" "C:\\profile\\relaunch.vbs"',
+    )
     const systemRoot = process.env.SystemRoot
     delete process.env.SystemRoot
     try {
-      expect(windowsRelaunchCommand(command)).toMatch(/^"C:\\Windows\\System32\\wscript\.exe" /)
+      expect(windowsScriptHostCommand('relaunch.vbs')).toMatch(/^"C:\\Windows\\System32\\wscript\.exe" /)
     } finally {
       if (systemRoot !== undefined) process.env.SystemRoot = systemRoot
     }
+    if (systemRoot !== undefined) {
+      expect(windowsScriptHostCommand('relaunch.vbs')).toContain(systemRoot)
+    }
+  })
+
+  it('writes a short Windows taskbar relaunch script only on Windows', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-taskbar-'))
+    roots.push(root)
+    const relaunch = await taskbarRelaunchCommand('win32', root, command, 'C:\\Windows')
+    expect(relaunch.length).toBeLessThan(260)
+    await expect(readFile(join(root, 'desktop-shell', 'relaunch.vbs'), 'utf8')).resolves.toBe(windowsRelaunchScript(command))
+    await expect(taskbarRelaunchCommand('linux', root, command)).resolves.toBe('')
   })
 })
 

@@ -2,7 +2,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLocale, RuntimeChildMessage, RuntimeParentMessage, RuntimeInitMessage } from './protocol.js'
 import { isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from './protocol.js'
-import { windowsRelaunchCommand } from './shortcuts.js'
 
 /** Minimal event object used by BrowserWindow close handlers. */
 export interface CloseEventLike {
@@ -275,7 +274,7 @@ export async function runElectronShell(
       appId: WINDOWS_APP_ID,
       appIconPath: ICON_ICO_PATH,
       appIconIndex: 0,
-      relaunchCommand: windowsRelaunchCommand(init.relaunch),
+      relaunchCommand: init.relaunchCommand,
       relaunchDisplayName: init.config.title,
     })
   }

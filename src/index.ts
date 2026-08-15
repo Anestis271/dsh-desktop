@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { homedir } from 'node:os'
 import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
-import { reconcileShortcuts, type LaunchCommand } from './shortcuts.js'
+import { reconcileShortcuts, taskbarRelaunchCommand, type LaunchCommand } from './shortcuts.js'
 import type { DesktopLocale } from './protocol.js'
 import { createDesktopSettingsRoute } from './settings-route.js'
 
@@ -114,12 +114,13 @@ export class DesktopController extends Service {
     this.queueShortcutSync()
     ctx.effect(async () => {
       const current = this.current()
+      const profileDir = dshHomePath('profiles', 'desktop')
       const options: DesktopLaunchOptions = {
         url: `http://127.0.0.1:${String(ctx.webServer.port)}`,
-        profileDir: dshHomePath('profiles', 'desktop'),
+        profileDir,
         locale: this.locale,
         config: current,
-        relaunch: desktopLaunchCommand(),
+        relaunchCommand: await internals.prepareTaskbarRelaunch(process.platform, profileDir, desktopLaunchCommand()),
       }
       const session = await internals.launch(options)
       this.session = session
@@ -158,9 +159,11 @@ export default DesktopController
 export const internals: {
   launch: (options: DesktopLaunchOptions) => Promise<DesktopSession>
   reconcileShortcuts: typeof reconcileShortcuts
+  prepareTaskbarRelaunch: typeof taskbarRelaunchCommand
 } = {
   launch: launchDesktop,
   reconcileShortcuts,
+  prepareTaskbarRelaunch: taskbarRelaunchCommand,
 }
 
 /** Build the portable command used by all optional user-level entry points. */

@@ -33,15 +33,18 @@ function provideWebServer(ctx: Context): ReturnType<typeof vi.fn> {
 describe('DesktopController', () => {
   const originalLaunch = internals.launch
   const originalReconcile = internals.reconcileShortcuts
+  const originalPrepareTaskbarRelaunch = internals.prepareTaskbarRelaunch
 
   beforeEach(() => {
     internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale: vi.fn(), stop: async () => {} }))
     internals.reconcileShortcuts = vi.fn(async () => {})
+    internals.prepareTaskbarRelaunch = vi.fn(async () => 'wscript.exe relaunch.vbs')
   })
 
   afterEach(() => {
     internals.launch = originalLaunch
     internals.reconcileShortcuts = originalReconcile
+    internals.prepareTaskbarRelaunch = originalPrepareTaskbarRelaunch
   })
 
   it('applies lightweight defaults from an empty settings document', async () => {
@@ -71,9 +74,9 @@ describe('DesktopController', () => {
       { desktop: false, appMenu: false, login: false },
       expect.objectContaining({ platform: process.platform, home: homedir() }),
     ) })
-    expect(internals.launch).toHaveBeenCalledWith(expect.objectContaining({
-      relaunch: desktopLaunchCommand(),
-    }))
+    await vi.waitFor(() => { expect(internals.launch).toHaveBeenCalledWith(expect.objectContaining({
+      relaunchCommand: 'wscript.exe relaunch.vbs',
+    })) })
     await ctx.fiber.dispose()
   })
 
@@ -114,7 +117,7 @@ describe('DesktopController', () => {
     ctx.provide('appExit', exit)
     internals.launch = vi.fn(async () => ({ duplicate: true, updateLocale: vi.fn(), stop: async () => {} }))
     await ctx.plugin(DesktopController, {})
-    expect(exit).toHaveBeenCalledWith(0)
+    await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(0) })
     await ctx.fiber.dispose()
   })
 
@@ -149,7 +152,7 @@ describe('DesktopController', () => {
     const updateLocale = vi.fn()
     internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale, stop: async () => {} }))
     await ctx.plugin(DesktopController, {})
-    expect(updateLocale).toHaveBeenCalledWith('zh')
+    await vi.waitFor(() => { expect(updateLocale).toHaveBeenCalledWith('zh') })
     ctx.emit('settings/updated', settingsNamespace('other'), {}, {}, 'write')
     ctx.emit('settings/updated', settingsNamespace('locale'), { preference: 'zh' }, {}, 'write')
     ctx.emit('settings/updated', settingsNamespace('locale'), { preference: 'en' }, {}, 'write')

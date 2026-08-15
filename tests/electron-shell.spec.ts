@@ -124,7 +124,7 @@ const init = {
     title: 'dsh Desktop',
     shortcuts: { desktop: false, appMenu: false, login: false },
   },
-  relaunch: { executable: 'node.exe', args: ['dsh.js', '--profile', 'desktop'], cwd: 'C:/work' },
+  relaunchCommand: '"C:\\Windows\\System32\\wscript.exe" "C:\\profile\\desktop-shell\\relaunch.vbs"',
 }
 
 describe('Electron shell', () => {
@@ -148,7 +148,7 @@ describe('Electron shell', () => {
       appId: 'com.anestis.dsh-desktop',
       appIconPath: expect.stringMatching(/dsh-desktop\.ico$/),
       appIconIndex: 0,
-      relaunchCommand: expect.stringMatching(/wscript\.exe.*windows-launcher\.vbs.*node\.exe.*--profile.*desktop/),
+      relaunchCommand: init.relaunchCommand,
       relaunchDisplayName: 'dsh Desktop',
     }])
     window.webContents.emit('dsh-desktop-theme', '#ffffff')
