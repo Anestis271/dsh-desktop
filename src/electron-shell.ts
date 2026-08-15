@@ -32,7 +32,7 @@ export interface WindowsAppDetails {
   appIconPath: string
   appIconIndex: number
   relaunchCommand: string
-  relaunchDisplayNameResource: string
+  relaunchDisplayName: string
 }
 
 /** Tray operations consumed by the shell. */
@@ -276,7 +276,7 @@ export async function runElectronShell(
       appIconPath: ICON_ICO_PATH,
       appIconIndex: 0,
       relaunchCommand: windowsRelaunchCommand(init.relaunch),
-      relaunchDisplayNameResource: init.config.title,
+      relaunchDisplayName: init.config.title,
     })
   }
   window.webContents.on('ipc-message', (_event, channel, ...args) => {

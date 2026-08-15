@@ -149,7 +149,7 @@ describe('Electron shell', () => {
       appIconPath: expect.stringMatching(/dsh-desktop\.ico$/),
       appIconIndex: 0,
       relaunchCommand: expect.stringMatching(/wscript\.exe.*windows-launcher\.vbs.*node\.exe.*--profile.*desktop/),
-      relaunchDisplayNameResource: 'dsh Desktop',
+      relaunchDisplayName: 'dsh Desktop',
     }])
     window.webContents.emit('dsh-desktop-theme', '#ffffff')
     window.webContents.emit('dsh-desktop-theme', 'url(javascript:bad)')
