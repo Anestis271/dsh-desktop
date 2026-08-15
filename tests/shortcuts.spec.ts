@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }))
@@ -86,6 +87,13 @@ describe('shortcut serialization', () => {
     if (systemRoot !== undefined) {
       expect(windowsScriptHostCommand('relaunch.vbs')).toContain(systemRoot)
     }
+  })
+
+  it('keeps the Windows launcher compatible with shortcuts from older installs', async () => {
+    const launcher = await readFile(fileURLToPath(new URL('../assets/windows-launcher.vbs', import.meta.url)), 'utf8')
+    expect(launcher).toContain('If WScript.Arguments.Count >= 8 Then')
+    expect(launcher).toContain('parameterStart = 2')
+    expect(launcher).toContain('parameterStart = 5')
   })
 
   it('writes a short Windows taskbar relaunch script only on Windows', async () => {
