@@ -9,7 +9,7 @@
 
 Turn the official DeepSeek Harness WebUI into a natural desktop experience.
 
-`@anestis271/dsh-desktop` is not a separate client and does not require a standalone desktop installer. It is a lightweight dsh plugin that keeps every capability of the official WebUI and adds a clean, native desktop shell around it.
+This is not a separate client and does not require a standalone desktop installer. It is a lightweight dsh plugin that keeps every capability of the official WebUI and adds a clean, native desktop shell around it.
 
 ## Preview
 
@@ -52,7 +52,7 @@ Every entry still launches only `dsh --profile desktop`. It does not install ano
 
 ## Design Principle
 
-dsh-desktop does only what a desktop shell should do. Sessions, settings, models, tools, and every product interface continue to come from the official DeepSeek Harness WebUI, without creating a parallel client that must be maintained separately.
+`dsh-desktop` does only what a desktop shell should do. Sessions, settings, models, tools, and every product interface continue to come from the official DeepSeek Harness WebUI, without creating a parallel client that must be maintained separately.
 
 ## License
 
