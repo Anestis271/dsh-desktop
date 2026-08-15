@@ -1,64 +1,62 @@
 # dsh Desktop
 
-`@anestis271/dsh-desktop` is a small Electron shell for the official DeepSeek Harness WebUI. It does not replace or re-render the WebUI: dsh starts the Web server, and the plugin opens the supplied URL in one isolated desktop window.
+简体中文 | [English](./README.en.md)
 
-## Install and start
+[![npm version](https://img.shields.io/npm/v/%40anestis271%2Fdsh-desktop?style=flat-square&logo=npm)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
+[![npm downloads](https://img.shields.io/npm/dm/%40anestis271%2Fdsh-desktop?style=flat-square)](https://www.npmjs.com/package/@anestis271/dsh-desktop)
+[![license](https://img.shields.io/npm/l/%40anestis271%2Fdsh-desktop?style=flat-square)](./LICENSE)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square)
 
-Install the plugin into the `desktop` profile, then start that profile:
+让 DeepSeek Harness 官方 WebUI 自然地成为一个桌面应用。
+
+`@anestis271/dsh-desktop` 不是另一套客户端，也不需要单独下载安装桌面程序。它只是一个轻量的 dsh 插件：保留官方 WebUI 的全部能力，在外面加上一层干净、原生的桌面外壳。
+
+## 界面预览
+
+<!-- 将桌面端截图保存到 docs/images/desktop-preview.png，然后用下面的图片替换占位文字。 -->
+<!-- ![dsh Desktop 界面预览](./docs/images/desktop-preview.png) -->
+
+> 桌面端截图占位，稍后补充。
+
+## 为什么选择 dsh Desktop
+
+- **无需单独安装应用**：没有额外的 MSI、DMG 或 AppImage，只需安装一个 npm 插件。
+- **官方 WebUI 是唯一真源**：不复制、不分叉、不重新实现界面，dsh 更新后依然保持一致。
+- **足够干净**：不增加第二套业务状态、账号体系或后台服务，只负责窗口与系统集成。
+- **像真正的桌面应用**：提供系统托盘、原生窗口按钮、协调一致的标题栏和可选快捷入口。
+- **重复启动更快**：再次点击快捷方式时直接唤起现有窗口，不重复创建 dsh 和 WebUI 实例。
+
+## 安装
+
+确保本机已经可以正常运行 dsh，然后执行：
 
 ```bash
 dsh plugin --profile desktop add @anestis271/dsh-desktop
 dsh --profile desktop
 ```
 
-For local development, install the packed artifact so module resolution matches an npm install:
+就是这样。首次启动会自动准备当前平台所需的桌面运行环境，之后直接复用，无需额外配置。
 
-```powershell
-pnpm run check
-$package = pnpm pack --pack-destination $env:TEMP | Select-Object -Last 1
-dsh plugin --profile desktop add $package
-dsh --profile desktop
-```
+## 桌面体验
 
-Do not use `add .` for runtime verification: pnpm links the checkout, so Node can resolve dsh peers from the repository's development `node_modules` instead of the host fallback.
+- 关闭窗口时可收起到系统托盘
+- 托盘菜单支持显示/隐藏、刷新、打开 profile 目录和退出
+- 托盘菜单跟随 dsh 的中英文设置实时切换
+- 保留各平台原生的最小化、最大化和关闭按钮
+- 标题栏颜色与 WebUI 侧边栏协调，形成完整的 L 形视觉
+- 同一 profile 始终只保留一个窗口和一个托盘实例
+- 支持 Windows、macOS 和 Linux 的用户级快捷入口
 
-The shell adds a tray icon with show/hide, WebUI reload, profile-directory, and quit actions. Its menu follows `locale.preference` from dsh settings (`zh` or `en`) live, without restarting the profile. Closing the window hides it in the tray by default. A profile-scoped single-instance lock prevents two desktop windows from sharing the same dsh profile.
+## 快捷入口
 
-On first start, the plugin downloads the pinned Electron runtime for the current OS and architecture, verifies it through Electron's official artifact client, and caches it under the `desktop` profile. Later starts reuse that runtime; the npm install itself runs no dependency build scripts.
+桌面图标、应用菜单和登录启动均默认关闭。启动 dsh Desktop 后，可在官方 WebUI 的 **设置 → 通用 → 桌面快捷方式** 中按需开启。
 
-## Creating shortcuts
+这些入口仍然只启动 `dsh --profile desktop`，不会安装另一份应用，也不需要管理员权限。关闭选项后，插件只会移除由它自己创建的入口。
 
-All optional entry points are disabled by default. Open **Settings → General → Desktop shortcuts** in the official WebUI and use the three live switches, or edit the user-level dsh settings file (`~/.dsh/settings.yaml`; on Windows, `C:\Users\<name>\.dsh\settings.yaml`):
+## 设计原则
 
-```yaml
-desktop:
-  closeToTray: true
-  startHidden: false
-  title: DeepSeek Harness
-  shortcuts:
-    desktop: true
-    appMenu: true
-    login: false
-```
+dsh Desktop 只做桌面外壳应该做的事。会话、设置、模型、工具和所有业务界面继续由 DeepSeek Harness 官方 WebUI 提供；插件不会建立一套需要额外维护的平行客户端。
 
-The settings are applied live. `desktop` creates a Desktop icon, `appMenu` creates a Windows Start Menu, macOS Applications, or Linux application-menu entry, and `login` creates a per-user startup entry. On Windows, for example, setting `desktop: true` creates `Desktop\DeepSeek Harness.lnk`; double-click it to run the same operation as `dsh --profile desktop`.
+## 许可证
 
-Shortcut files are written only at user level and carry an ownership marker. Disabling an option removes only the matching entry created by this plugin. Each entry invokes the Node executable and dsh entry point used by the running process with `--profile desktop`; it does not install, copy, or sign a separate application. Windows entries use the packaged multi-resolution icon and a `wscript.exe` bridge that launches the same command with its console window hidden. When that profile is already open, the bridge first runs a short-lived Electron activation probe; the existing window is shown through Electron's profile-scoped single-instance lock without booting a second dsh host. If no instance exists, the probe releases the lock and the bridge follows the normal dsh startup path.
-
-The `desktop` namespace remains owned and persisted by dsh's settings provider. Because dsh `0.1.0-rc.6` does not expose third-party namespaces through `settings.describe`, the General-settings contribution uses one guarded same-origin route on the existing dsh Web server. The route accepts only the three shortcut booleans, binds to the active loopback authority, and is removed with the plugin lifecycle; it does not start another server.
-
-## Window behavior
-
-The title-bar overlay keeps each platform's native window controls and reserves a 36 px drag region between the live sidebar edge and the native caption buttons. Its color follows the official WebUI `theme-color` metadata; the plugin does not add or manage WebUI controls.
-
-On Windows, the running window publishes an explicit taskbar identity with the packaged icon and a short profile-local `relaunch.vbs` command that activates the existing profile or starts `dsh --profile desktop` without a console. Pinning the running window therefore preserves the DeepSeek Harness name, icon, and profile entry point instead of pinning the bare Electron runtime.
-
-## Development
-
-```powershell
-pnpm run build
-pnpm run test:coverage
-pnpm pack --dry-run
-```
-
-Electron runs as a child process with `contextIsolation`, sandboxing, and disabled Node integration. The only renderer bridge is the bundled `electron-preload.cjs` title-bar helper.
+[MIT](./LICENSE)

@@ -24,7 +24,8 @@
     "lib/**/*.map",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
-    "assets"
+    "assets",
+    "README.en.md"
   ],
   "scripts": {
     "build": "node scripts/compose-bundle.mjs && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
