@@ -32,18 +32,18 @@ function provideWebServer(ctx: Context): ReturnType<typeof vi.fn> {
 
 describe('DesktopController', () => {
   const originalLaunch = internals.launch
-  const originalReconcile = internals.reconcileShortcuts
+  const originalReconcile = internals.reconcileShortcut
   const originalPrepareTaskbarRelaunch = internals.prepareTaskbarRelaunch
 
   beforeEach(() => {
     internals.launch = vi.fn(async () => ({ duplicate: false, updateLocale: vi.fn(), stop: async () => {} }))
-    internals.reconcileShortcuts = vi.fn(async () => {})
+    internals.reconcileShortcut = vi.fn(async () => {})
     internals.prepareTaskbarRelaunch = vi.fn(async () => 'wscript.exe relaunch.vbs')
   })
 
   afterEach(() => {
     internals.launch = originalLaunch
-    internals.reconcileShortcuts = originalReconcile
+    internals.reconcileShortcut = originalReconcile
     internals.prepareTaskbarRelaunch = originalPrepareTaskbarRelaunch
   })
 
@@ -58,20 +58,28 @@ describe('DesktopController', () => {
       kind: 'exact', path: '/dsh-desktop/settings',
     }))
     const route = registerRoute.mock.calls[0]?.[0] as WebRoute
-    const request = Readable.from([JSON.stringify({ key: 'login', enabled: true })]) as IncomingMessage
+    const request = Readable.from([JSON.stringify({ action: 'setLogin', enabled: true })]) as IncomingMessage
     request.method = 'POST'
     request.headers = { host: '127.0.0.1:3080', 'content-type': 'application/json' }
     const response = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() } as unknown as ServerResponse
     await route.handler(request, response)
     expect(ctx.desktop.current().shortcuts.login).toBe(true)
+    const createRequest = Readable.from([JSON.stringify({ action: 'create', target: 'desktop' })]) as IncomingMessage
+    createRequest.method = 'POST'
+    createRequest.headers = { host: '127.0.0.1:3080', 'content-type': 'application/json' }
+    await route.handler(createRequest, response)
     expect(ctx.desktop.current()).toEqual({
       closeToTray: true,
       startHidden: false,
       title: 'DeepSeek Harness',
-      shortcuts: { desktop: false, appMenu: false, login: true },
+      shortcuts: { login: true },
     })
-    await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenCalledWith(
-      { desktop: false, appMenu: false, login: false },
+    await vi.waitFor(() => { expect(internals.reconcileShortcut).toHaveBeenCalledWith(
+      'login', false,
+      expect.objectContaining({ platform: process.platform, home: homedir() }),
+    ) })
+    await vi.waitFor(() => { expect(internals.reconcileShortcut).toHaveBeenCalledWith(
+      'desktop', true,
       expect.objectContaining({ platform: process.platform, home: homedir() }),
     ) })
     await vi.waitFor(() => { expect(internals.launch).toHaveBeenCalledWith(expect.objectContaining({
@@ -89,18 +97,18 @@ describe('DesktopController', () => {
 
     await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, {
       closeToTray: false,
-      shortcuts: { desktop: true },
+      shortcuts: { login: true },
     })
     const first = ctx.desktop.current()
-    first.shortcuts.desktop = false
+    first.shortcuts.login = false
     expect(ctx.desktop.current()).toEqual({
       closeToTray: false,
       startHidden: false,
       title: 'dsh Desktop',
-      shortcuts: { desktop: true, appMenu: false, login: false },
+      shortcuts: { login: true },
     })
-    await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenLastCalledWith(
-      { desktop: true, appMenu: false, login: false },
+    await vi.waitFor(() => { expect(internals.reconcileShortcut).toHaveBeenLastCalledWith(
+      'login', true,
       expect.any(Object),
     ) })
 
@@ -130,7 +138,7 @@ describe('DesktopController', () => {
       .mockRejectedValueOnce(new Error('disk unavailable'))
       .mockResolvedValue(undefined)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
-    internals.reconcileShortcuts = reconcile
+    internals.reconcileShortcut = reconcile
     await ctx.plugin(DesktopController, {})
     await vi.waitFor(() => { expect(reconcile).toHaveBeenCalled() })
     await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith(
@@ -139,7 +147,7 @@ describe('DesktopController', () => {
     ) })
     await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: true } })
     await vi.waitFor(() => { expect(reconcile).toHaveBeenLastCalledWith(
-      { desktop: false, appMenu: false, login: true },
+      'login', true,
       expect.any(Object),
     ) })
     await ctx.fiber.dispose()

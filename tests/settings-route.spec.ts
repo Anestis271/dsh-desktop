@@ -37,10 +37,11 @@ async function invoke(
 }
 
 function access(): DesktopSettingsAccess {
-  const shortcuts = { desktop: false, appMenu: false, login: false }
+  const shortcuts = { login: false }
   return {
     read: () => ({ ...shortcuts }),
-    write: vi.fn(async (key, enabled) => { shortcuts[key] = enabled }),
+    create: vi.fn(async () => {}),
+    setLogin: vi.fn(async enabled => { shortcuts.login = enabled }),
   }
 }
 
@@ -68,17 +69,23 @@ describe('desktop settings route', () => {
     expect((await invoke(access(), { method: 'POST' })).status).toBe(415)
   })
 
-  it('updates one validated shortcut and returns the committed snapshot', async () => {
+  it('runs validated create and login actions and returns the committed snapshot', async () => {
     const routeAccess = access()
-    const response = await invoke(routeAccess, {
+    const created = await invoke(routeAccess, {
       method: 'POST',
       contentType: 'application/json; charset=utf-8',
-      body: JSON.stringify({ key: 'appMenu', enabled: true }),
+      body: JSON.stringify({ action: 'create', target: 'appMenu' }),
     })
-    expect(routeAccess.write).toHaveBeenCalledWith('appMenu', true)
+    expect(routeAccess.create).toHaveBeenCalledWith('appMenu')
+    expect(created.status).toBe(200)
+    const response = await invoke(routeAccess, {
+      method: 'POST', contentType: 'application/json',
+      body: JSON.stringify({ action: 'setLogin', enabled: true }),
+    })
+    expect(routeAccess.setLogin).toHaveBeenCalledWith(true)
     expect(response).toMatchObject({
       status: 200,
-      body: JSON.stringify({ shortcuts: { desktop: false, appMenu: true, login: false } }),
+      body: JSON.stringify({ shortcuts: { login: true } }),
     })
   })
 
@@ -88,16 +95,16 @@ describe('desktop settings route', () => {
     })
     expect((await request('{')).status).toBe(400)
     expect((await request('null')).status).toBe(400)
-    expect((await request(JSON.stringify({ key: 'other', enabled: true }))).status).toBe(400)
-    expect((await request(JSON.stringify({ key: 'desktop', enabled: 'yes' }))).status).toBe(400)
+    expect((await request(JSON.stringify({ action: 'create', target: 'login' }))).status).toBe(400)
+    expect((await request(JSON.stringify({ action: 'setLogin', enabled: 'yes' }))).status).toBe(400)
     expect((await request(JSON.stringify({ value: 'x'.repeat(1100) }))).body).toContain('invalid settings request')
   })
 
   it('contains provider failures without leaking implementation details', async () => {
     const failing = access()
-    failing.write = vi.fn(async () => { throw new Error('disk unavailable') })
+    failing.create = vi.fn(async () => { throw new Error('disk unavailable') })
     const error = await invoke(failing, {
-      method: 'POST', contentType: 'application/json', body: JSON.stringify({ key: 'login', enabled: true }),
+      method: 'POST', contentType: 'application/json', body: JSON.stringify({ action: 'create', target: 'desktop' }),
     })
     expect(error.body).toBe(JSON.stringify({ error: 'invalid settings request' }))
   })

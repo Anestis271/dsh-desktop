@@ -13,7 +13,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { electronRuntimePath, launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
-import { reconcileShortcuts, taskbarRelaunchCommand, type LaunchCommand, type WindowsActivation } from './shortcuts.js'
+import { reconcileShortcut, taskbarRelaunchCommand, type LaunchCommand, type ShortcutCreateTarget, type ShortcutKey, type WindowsActivation } from './shortcuts.js'
 import type { DesktopLocale } from './protocol.js'
 import { createDesktopSettingsRoute } from './settings-route.js'
 
@@ -37,10 +37,6 @@ export function desktopLocale(value: unknown): DesktopLocale {
 
 /** User-controlled shortcut targets; every target is opt-in. */
 export interface ShortcutSettings {
-  /** Create a desktop shortcut. */
-  desktop: boolean
-  /** Create a Start-menu, Applications, or freedesktop app-menu entry. */
-  appMenu: boolean
   /** Launch the desktop profile after user login. */
   login: boolean
 }
@@ -71,10 +67,8 @@ export const Config: z<Config> = z.object({
   startHidden: z.boolean().default(false),
   title: z.string().default('DeepSeek Harness'),
   shortcuts: z.object({
-    desktop: z.boolean().default(false),
-    appMenu: z.boolean().default(false),
     login: z.boolean().default(false),
-  }).default({ desktop: false, appMenu: false, login: false }),
+  }).default({ login: false }),
 })
 
 /**
@@ -104,15 +98,14 @@ export class DesktopController extends Service {
     })
     installSettingsSection(ctx, DESKTOP_SETTINGS_NAMESPACE, Config, entry, {
       setSource: current => { this.source = current as () => ResolvedConfig },
-      onChange: () => { this.queueShortcutSync() },
+      onChange: () => { void this.queueShortcutSync('login', this.current().shortcuts.login) },
     })
     ctx.effect(() => ctx.webServer.register(createDesktopSettingsRoute({
       read: () => this.current().shortcuts,
-      write: async (key, enabled) => {
-        await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { [key]: enabled } })
-      },
+      create: async (target: ShortcutCreateTarget) => { await this.queueShortcutSync(target, true) },
+      setLogin: async enabled => { await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: enabled } }) },
     }, `127.0.0.1:${String(ctx.webServer.port)}`)), 'dsh-desktop: settings route')
-    this.queueShortcutSync()
+    void this.queueShortcutSync('login', this.current().shortcuts.login)
     ctx.effect(async () => {
       const current = this.current()
       const profileDir = dshHomePath('profiles', 'desktop')
@@ -144,19 +137,19 @@ export class DesktopController extends Service {
     return structuredClone(this.source())
   }
 
-  /** Serialize shortcut writes so rapid settings edits cannot interleave. */
-  private queueShortcutSync(): void {
-    const config = this.current()
-    this.shortcutSync = this.shortcutSync
-      .then(() => internals.reconcileShortcuts(config.shortcuts, {
+  /** Serialize shortcut actions so filesystem writes cannot interleave. */
+  private queueShortcutSync(key: ShortcutKey, enabled: boolean): Promise<void> {
+    const operation = this.shortcutSync
+      .then(() => internals.reconcileShortcut(key, enabled, {
         platform: process.platform,
         home: homedir(),
         command: desktopLaunchCommand(),
         windowsActivation: desktopWindowsActivation(dshHomePath('profiles', 'desktop')),
       }))
-      .catch(error => {
-        this.ctx.logger.warn('dsh-desktop: shortcut reconciliation failed: %o', error)
-      })
+    this.shortcutSync = operation.catch(error => {
+      this.ctx.logger.warn('dsh-desktop: shortcut reconciliation failed: %o', error)
+    })
+    return operation
   }
 }
 
@@ -165,11 +158,11 @@ export default DesktopController
 /** Runtime seams kept injectable for lifecycle tests and future dsh hosts. */
 export const internals: {
   launch: (options: DesktopLaunchOptions) => Promise<DesktopSession>
-  reconcileShortcuts: typeof reconcileShortcuts
+  reconcileShortcut: typeof reconcileShortcut
   prepareTaskbarRelaunch: typeof taskbarRelaunchCommand
 } = {
   launch: launchDesktop,
-  reconcileShortcuts,
+  reconcileShortcut,
   prepareTaskbarRelaunch: taskbarRelaunchCommand,
 }
 

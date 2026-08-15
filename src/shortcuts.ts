@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import type { ShortcutSettings } from './index.js'
 
 /** Canonical launch command stored in user-level shortcuts. */
 export interface LaunchCommand {
@@ -34,6 +33,9 @@ export interface ShortcutPaths {
   appMenu: string
   login: string
 }
+
+export type ShortcutKey = keyof ShortcutPaths
+export type ShortcutCreateTarget = Exclude<ShortcutKey, 'login'>
 
 const MARKER = 'dsh-desktop-owned-v1'
 const PRODUCT = 'DeepSeek Harness'
@@ -204,30 +206,27 @@ export async function createWindowsShortcut(
   })
 }
 
-/** Reconcile the user-selected shortcut targets and remove only owned files. */
-export async function reconcileShortcuts(settings: ShortcutSettings, deps: ShortcutDependencies): Promise<void> {
+/** Create or remove one plugin-owned user-level entry. */
+export async function reconcileShortcut(key: ShortcutKey, enabled: boolean, deps: ShortcutDependencies): Promise<void> {
   const paths = shortcutPaths(deps.platform, deps.home)
-  const enabled: Array<keyof ShortcutSettings> = ['desktop', 'appMenu', 'login']
-  for (const key of enabled) {
-    const path = paths[key]
-    if (!settings[key]) {
-      await removeOwned(path)
-      continue
+  const path = paths[key]
+  if (!enabled) {
+    await removeOwned(path)
+    return
+  }
+  if (deps.platform === 'win32') {
+    if (deps.windowsActivation === undefined) {
+      throw new Error('dsh-desktop: Windows shortcut activation metadata is unavailable')
     }
-    if (deps.platform === 'win32') {
-      if (deps.windowsActivation === undefined) {
-        throw new Error('dsh-desktop: Windows shortcut activation metadata is unavailable')
-      }
-      await ensureParent(path)
-      await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command, deps.windowsActivation)
-      await writeFile(markerPath(path), MARKER, { mode: 0o600 })
-    } else if (deps.platform === 'darwin' && key === 'login') {
-      await writeOwned(path, launchAgent(deps.command))
-    } else if (deps.platform === 'darwin') {
-      await writeOwned(path, `#!/bin/sh\nexec ${[deps.command.executable, ...deps.command.args].map(quoteExec).join(' ')}\n# ${MARKER}\n`)
-    } else {
-      await writeOwned(path, desktopEntry(deps.command))
-    }
+    await ensureParent(path)
+    await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command, deps.windowsActivation)
+    await writeFile(markerPath(path), MARKER, { mode: 0o600 })
+  } else if (deps.platform === 'darwin' && key === 'login') {
+    await writeOwned(path, launchAgent(deps.command))
+  } else if (deps.platform === 'darwin') {
+    await writeOwned(path, `#!/bin/sh\nexec ${[deps.command.executable, ...deps.command.args].map(quoteExec).join(' ')}\n# ${MARKER}\n`)
+  } else {
+    await writeOwned(path, desktopEntry(deps.command))
   }
 }
 

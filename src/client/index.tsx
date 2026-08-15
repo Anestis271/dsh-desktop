@@ -28,7 +28,8 @@ export function apply(ctx: ClientContext): void {
     locale: NAMESPACE,
     inject: (): ShortcutSettingsRowInjected => ({
       hooks: { desktopSettings: store },
-      setShortcut: (key, enabled) => { void store.setShortcut(key, enabled).catch(() => {}) },
+      createShortcut: target => { void store.createShortcut(target).catch(() => {}) },
+      setLogin: enabled => { void store.setLogin(enabled).catch(() => {}) },
     }),
   }, ShortcutSettingsRow))
 }

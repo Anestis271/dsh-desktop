@@ -19,42 +19,48 @@ function descendants(node: ReactNode): ReactElement[] {
 }
 
 describe('desktop shortcut settings client', () => {
-  it('renders three accessible live switches and applies user choices', () => {
-    const setShortcut = vi.fn()
-    const snapshot = ready({ desktop: true, appMenu: false, login: true })
+  it('renders two create actions and one accessible login switch', () => {
+    const createShortcut = vi.fn()
+    const setLogin = vi.fn()
+    const snapshot = ready({ login: true })
     const tree = ShortcutSettingsRow({
       t: key => en[key],
       useDesktopSettings: selector => selector(snapshot),
-      setShortcut,
+      createShortcut,
+      setLogin,
     } as ShortcutSettingsRowProps)
-    const switches = descendants(tree).filter(element => element.type === 'button')
+    const buttons = descendants(tree).filter(element => element.type === 'button' && element.props.role !== 'switch')
+    const switches = descendants(tree).filter(element => element.props.role === 'switch')
 
-    expect(switches.map(element => element.props['aria-label'])).toEqual([
-      'Desktop shortcut', 'Application menu', 'Launch at login',
-    ])
-    expect(switches.map(element => element.props['aria-checked'])).toEqual([true, false, true])
-    for (const element of switches) element.props.onClick()
-    expect(setShortcut.mock.calls).toEqual([
-      ['desktop', false], ['appMenu', true], ['login', false],
-    ])
+    expect(buttons).toHaveLength(2)
+    expect(buttons.map(element => element.props.children)).toEqual(['Create', 'Create'])
+    buttons[0]?.props.onClick()
+    buttons[1]?.props.onClick()
+    expect(createShortcut.mock.calls).toEqual([['desktop'], ['appMenu']])
+    expect(switches).toHaveLength(1)
+    expect(switches[0]?.props).toMatchObject({ 'aria-label': 'Launch at login', 'aria-checked': true })
+    switches[0]?.props.onClick()
+    expect(setLogin).toHaveBeenCalledWith(false)
   })
 
   it('disables controls until writable settings arrive and defaults them off', () => {
     const tree = ShortcutSettingsRow({
       t: key => en[key],
       useDesktopSettings: selector => selector(ready(undefined, false)),
-      setShortcut: vi.fn(),
+      createShortcut: vi.fn(),
+      setLogin: vi.fn(),
     } as ShortcutSettingsRowProps)
-    const switches = descendants(tree).filter(element => element.type === 'button')
-    expect(switches.every(element => element.props.disabled === true)).toBe(true)
-    expect(switches.every(element => element.props['aria-checked'] === false)).toBe(true)
+    const controls = descendants(tree).filter(element => element.type === 'button')
+    expect(controls).toHaveLength(3)
+    expect(controls.every(element => element.props.disabled === true)).toBe(true)
+    expect(controls.find(element => element.props.role === 'switch')?.props['aria-checked']).toBe(false)
   })
 
   it('loads, publishes, and serializes shortcut writes', async () => {
     const values = [
-      { shortcuts: { desktop: false, appMenu: false, login: false } },
-      { shortcuts: { desktop: true, appMenu: false, login: false } },
-      { shortcuts: { desktop: true, appMenu: true, login: false } },
+      { shortcuts: { login: false } },
+      { shortcuts: { login: false } },
+      { shortcuts: { login: true } },
     ]
     const fetcher = vi.fn(async () => new Response(JSON.stringify(values.shift()), {
       status: 200, headers: { 'content-type': 'application/json' },
@@ -64,12 +70,12 @@ describe('desktop shortcut settings client', () => {
     const unsubscribe = store.subscribe(listener)
 
     await store.load()
-    await Promise.all([store.setShortcut('desktop', true), store.setShortcut('appMenu', true)])
-    expect(store.getSnapshot()).toEqual(ready({ desktop: true, appMenu: true, login: false }))
+    await Promise.all([store.createShortcut('desktop'), store.setLogin(true)])
+    expect(store.getSnapshot()).toEqual(ready({ login: true }))
     expect(fetcher.mock.calls.map(call => call[1]?.body)).toEqual([
       undefined,
-      JSON.stringify({ key: 'desktop', enabled: true }),
-      JSON.stringify({ key: 'appMenu', enabled: true }),
+      JSON.stringify({ action: 'create', target: 'desktop' }),
+      JSON.stringify({ action: 'setLogin', enabled: true }),
     ])
     expect(listener).toHaveBeenCalledTimes(3)
     unsubscribe()
@@ -88,14 +94,14 @@ describe('desktop shortcut settings client', () => {
     const listener = vi.fn()
     store.subscribe(listener)
     await store.load()
-    await expect(store.setShortcut('login', true)).rejects.toThrow('desktop settings request failed (503)')
+    await expect(store.setLogin(true)).rejects.toThrow('desktop settings request failed (503)')
     await vi.waitFor(() => { expect(listener).toHaveBeenCalledTimes(2) })
     expect(store.getSnapshot()).toEqual({ status: 'error', writable: false })
   })
 
   it('registers the localized General settings row through official services', async () => {
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      shortcuts: { desktop: false, appMenu: false, login: false },
+      shortcuts: { login: false },
     }), { status: 200 }))
     const registerLocale = vi.fn(() => vi.fn())
     const registerSlot = vi.fn((options: unknown) => options)
@@ -112,12 +118,16 @@ describe('desktop shortcut settings client', () => {
     expect(fetcher.mock.contexts[0]).toBe(globalThis)
     expect(registerLocale).toHaveBeenCalledWith('settings.desktop', expect.objectContaining({ zh: expect.any(Object), en }))
     expect(injectSlot).toHaveBeenCalledWith('settings.general.item', expect.any(Function))
-    const options = registerSlot.mock.calls[0]?.[0] as { id: string; inject: () => { setShortcut(key: 'desktop', enabled: boolean): void } }
+    const options = registerSlot.mock.calls[0]?.[0] as {
+      id: string
+      inject: () => { createShortcut(target: 'desktop'): void, setLogin(enabled: boolean): void }
+    }
     expect(options.id).toBe('desktop-shortcuts')
-    options.inject().setShortcut('desktop', true)
-    await vi.waitFor(() => { expect(fetcher).toHaveBeenCalledTimes(2) })
+    options.inject().createShortcut('desktop')
+    options.inject().setLogin(true)
+    await vi.waitFor(() => { expect(fetcher).toHaveBeenCalledTimes(3) })
     expect(fetcher).toHaveBeenLastCalledWith('/dsh-desktop/settings', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ key: 'desktop', enabled: true }),
+      method: 'POST', body: JSON.stringify({ action: 'setLogin', enabled: true }),
     }))
     fetcher.mockRestore()
   })

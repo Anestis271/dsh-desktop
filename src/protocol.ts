@@ -51,8 +51,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isShortcutSettings(value: unknown): boolean {
   return isRecord(value)
-    && typeof value.desktop === 'boolean'
-    && typeof value.appMenu === 'boolean'
     && typeof value.login === 'boolean'
 }
 

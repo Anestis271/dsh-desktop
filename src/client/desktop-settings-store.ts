@@ -1,4 +1,4 @@
-import type { ClientShortcutSettings, DesktopClientSettings } from './shortcut-settings-row.js'
+import type { DesktopClientSettings, ShortcutCreateTarget } from './shortcut-settings-row.js'
 
 export const DESKTOP_SETTINGS_PATH = '/dsh-desktop/settings'
 
@@ -14,8 +14,6 @@ function isSettings(value: unknown): value is DesktopClientSettings {
   if (typeof value !== 'object' || value === null || !('shortcuts' in value)) return false
   const shortcuts = value.shortcuts as Record<string, unknown>
   return typeof shortcuts === 'object' && shortcuts !== null
-    && typeof shortcuts.desktop === 'boolean'
-    && typeof shortcuts.appMenu === 'boolean'
     && typeof shortcuts.login === 'boolean'
 }
 
@@ -42,12 +40,20 @@ export class DesktopSettingsStore {
     }
   }
 
-  setShortcut(key: keyof ClientShortcutSettings, enabled: boolean): Promise<void> {
+  createShortcut(target: ShortcutCreateTarget): Promise<void> {
+    return this.mutate({ action: 'create', target })
+  }
+
+  setLogin(enabled: boolean): Promise<void> {
+    return this.mutate({ action: 'setLogin', enabled })
+  }
+
+  private mutate(body: unknown): Promise<void> {
     const operation = this.tail.then(async () => {
       this.commit(await this.request({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ key, enabled }),
+        body: JSON.stringify(body),
       }))
     })
     this.tail = operation.catch(() => { this.fail() })

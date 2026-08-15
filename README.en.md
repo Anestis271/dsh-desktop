@@ -46,9 +46,9 @@ That is all. The first launch automatically prepares the desktop runtime for the
 
 ## Shortcuts
 
-Desktop icons, application-menu entries, and launch-at-login are disabled by default. After starting dsh Desktop, enable only the entries you need under **Settings → General settings → Desktop shortcuts** in the official WebUI.
+After starting dsh Desktop, create desktop and application-menu entries as needed under **Settings → General** in the official WebUI. Launch at login is disabled by default and can be enabled in the same place.
 
-Every entry still launches only `dsh --profile desktop`. It does not install another application or require administrator access. Disabling an option removes only the entry created by this plugin.
+Every entry still launches only `dsh --profile desktop`. It does not install another application or require administrator access. Disabling launch at login removes only the entry created by this plugin.
 
 ## Design Principle
 

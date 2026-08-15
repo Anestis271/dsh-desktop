@@ -13,7 +13,7 @@ import {
   createWindowsShortcut,
   desktopEntry,
   launchAgent,
-  reconcileShortcuts,
+  reconcileShortcut,
   shortcutPaths,
   taskbarRelaunchCommand,
   windowsLauncherArguments,
@@ -159,23 +159,27 @@ describe('shortcut reconciliation', () => {
   it('creates and removes Linux entries while preserving unowned files', async () => {
     const root = await home()
     const paths = shortcutPaths('linux', root)
-    await reconcileShortcuts({ desktop: true, appMenu: true, login: true }, { platform: 'linux', home: root, command })
+    await reconcileShortcut('desktop', true, { platform: 'linux', home: root, command })
+    await reconcileShortcut('appMenu', true, { platform: 'linux', home: root, command })
+    await reconcileShortcut('login', true, { platform: 'linux', home: root, command })
     await expect(readFile(paths.desktop, 'utf8')).resolves.toContain('[Desktop Entry]')
     await expect(stat(`${paths.desktop}.dsh-owner`)).resolves.toBeTruthy()
-    await reconcileShortcuts({ desktop: false, appMenu: false, login: false }, { platform: 'linux', home: root, command })
+    await reconcileShortcut('desktop', false, { platform: 'linux', home: root, command })
     await expect(stat(paths.desktop)).rejects.toMatchObject({ code: 'ENOENT' })
 
-    await reconcileShortcuts({ desktop: true, appMenu: false, login: false }, { platform: 'linux', home: root, command })
+    await reconcileShortcut('desktop', true, { platform: 'linux', home: root, command })
     await readFile(paths.desktop, 'utf8').then(() => undefined)
     await rm(`${paths.desktop}.dsh-owner`)
-    await expect(reconcileShortcuts({ desktop: false, appMenu: false, login: false }, { platform: 'linux', home: root, command })).resolves.toBeUndefined()
+    await expect(reconcileShortcut('desktop', false, { platform: 'linux', home: root, command })).resolves.toBeUndefined()
     await expect(stat(paths.desktop)).resolves.toBeTruthy()
   })
 
   it('writes macOS command and launch-agent variants', async () => {
     const root = await home()
     const paths = shortcutPaths('darwin', root)
-    await reconcileShortcuts({ desktop: true, appMenu: true, login: true }, { platform: 'darwin', home: root, command })
+    await reconcileShortcut('desktop', true, { platform: 'darwin', home: root, command })
+    await reconcileShortcut('appMenu', true, { platform: 'darwin', home: root, command })
+    await reconcileShortcut('login', true, { platform: 'darwin', home: root, command })
     await expect(readFile(paths.desktop, 'utf8')).resolves.toContain('#!/bin/sh')
     await expect(readFile(paths.login, 'utf8')).resolves.toContain('<key>RunAtLoad</key>')
   })
@@ -183,7 +187,7 @@ describe('shortcut reconciliation', () => {
   it('creates Windows entries through the injectable runner', async () => {
     const root = await home()
     const calls: string[] = []
-    await reconcileShortcuts({ desktop: true, appMenu: true, login: true }, {
+    const dependencies = {
       platform: 'win32', home: root, command,
       windowsActivation: activation,
       runWindowsShortcut: async path => {
@@ -191,7 +195,10 @@ describe('shortcut reconciliation', () => {
         calls.push(path)
         await writeFile(path, '')
       },
-    })
+    } as const
+    await reconcileShortcut('desktop', true, dependencies)
+    await reconcileShortcut('appMenu', true, dependencies)
+    await reconcileShortcut('login', true, dependencies)
     expect(calls).toHaveLength(3)
     await expect(stat(`${shortcutPaths('win32', root).desktop}.dsh-owner`)).resolves.toBeTruthy()
   })
@@ -201,7 +208,7 @@ describe('shortcut reconciliation', () => {
     const paths = shortcutPaths('win32', root)
     const child = new ProcessChild()
     spawnMock.mockReturnValue(child)
-    const pending = reconcileShortcuts({ desktop: true, appMenu: false, login: false }, {
+    const pending = reconcileShortcut('desktop', true, {
       platform: 'win32', home: root, command, windowsActivation: activation,
     })
     await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledOnce() })
@@ -211,7 +218,7 @@ describe('shortcut reconciliation', () => {
 
   it('rejects enabled Windows shortcuts without activation metadata', async () => {
     const root = await home()
-    await expect(reconcileShortcuts({ desktop: true, appMenu: false, login: false }, {
+    await expect(reconcileShortcut('desktop', true, {
       platform: 'win32', home: root, command,
     })).rejects.toThrow(/activation metadata/)
   })
@@ -220,6 +227,6 @@ describe('shortcut reconciliation', () => {
     const root = await home()
     const path = shortcutPaths('linux', root).desktop
     await mkdir(`${path}.dsh-owner`, { recursive: true })
-    await expect(reconcileShortcuts({ desktop: false, appMenu: false, login: false }, { platform: 'linux', home: root, command })).rejects.toBeTruthy()
+    await expect(reconcileShortcut('desktop', false, { platform: 'linux', home: root, command })).rejects.toBeTruthy()
   })
 })

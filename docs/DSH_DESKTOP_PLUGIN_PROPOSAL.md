@@ -173,9 +173,9 @@ dsh --profile desktop
 
 Windows 运行窗口还应通过 `BrowserWindow.setAppDetails()` 发布与 `.lnk` 一致的 AppUserModelID、图标、显示名和隐藏 relaunch command。完整 activation probe 与 Node/dsh 回退参数写入 profile 内部的 `desktop-shell/relaunch.vbs`，Property Store 只保存短 `wscript.exe` 命令，防止超长绝对路径被拒绝并回退到未打包的宿主 `electron.exe`。
 
-设置变化触发一次性 reconcile。插件为创建的入口写入稳定标识和版本信息；关闭设置或卸载时只删除由本插件创建且标识匹配的入口，不删除用户自行创建的同名文件。失败应记录到 dsh 日志并在设置 UI 返回可操作错误，不阻止主窗口启动。
+创建按钮触发对应入口的一次性幂等写入，登录启动设置变化只协调登录入口。插件为创建的入口写入稳定标识和版本信息；关闭登录启动时只删除由本插件创建且标识匹配的入口，不删除用户自行创建的同名文件。失败应记录到 dsh 日志并在设置 UI 返回可操作错误，不阻止主窗口启动。
 
-用户可直接在官方 WebUI 设置页启用这些选项，或编辑用户级 `~/.dsh/settings.yaml`（Windows 对应 `C:\Users\<用户名>\.dsh\settings.yaml`）。设置变更实时生效：`desktop` 创建桌面图标，`appMenu` 创建开始菜单、Applications 或 freedesktop 应用菜单入口，`login` 创建当前用户的登录启动入口。例如 Windows 上启用 `desktop: true` 后会生成 `Desktop\DeepSeek Harness.lnk`，双击等效于执行 `dsh --profile desktop`。这些入口只引用当前运行中的 Node 与 dsh 入口，不复制或签名独立应用程序。
+用户可直接在官方 WebUI 设置页通过按钮创建桌面图标和开始菜单、Applications 或 freedesktop 应用菜单入口；这两项是幂等动作，不占用持久化配置。只有 `shortcuts.login` 作为布尔设置保存在用户级 `~/.dsh/settings.yaml`（Windows 对应 `C:\Users\<用户名>\.dsh\settings.yaml`），用于协调当前用户的登录启动入口。例如 Windows 上点击“桌面快捷方式 → 创建”后会生成 `Desktop\DeepSeek Harness.lnk`，双击等效于执行 `dsh --profile desktop`。这些入口只引用当前运行中的 Node 与 dsh 入口，不复制或签名独立应用程序。
 
 快捷入口和重复启动必须共享单实例策略：同一 `desktop` profile 已有窗口时，Windows shell 入口通过 activation probe 直接发送 focus/show 请求，无需完整引导第二个 dsh host；用户手动执行新的 `dsh --profile desktop` 时仍由 Electron 单实例路径安全收敛。两种路径都不得创建第二个托盘和第二个 WebUI 会话。单实例锁应位于 profile 作用域并使用平台原子机制，异常退出后可恢复。
 

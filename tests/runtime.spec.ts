@@ -41,7 +41,7 @@ const config = {
   closeToTray: true,
   startHidden: false,
   title: 'dsh',
-  shortcuts: { desktop: false, appMenu: false, login: false },
+  shortcuts: { login: false },
 } as const
 
 const options: DesktopLaunchOptions = {

@@ -122,7 +122,7 @@ const init = {
     closeToTray: true,
     startHidden: false,
     title: 'dsh Desktop',
-    shortcuts: { desktop: false, appMenu: false, login: false },
+    shortcuts: { login: false },
   },
   relaunchCommand: '"C:\\Windows\\System32\\wscript.exe" "C:\\profile\\desktop-shell\\relaunch.vbs"',
 }

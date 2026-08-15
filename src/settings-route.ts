@@ -1,15 +1,17 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { ShortcutSettings } from './index.js'
+import type { ShortcutCreateTarget } from './shortcuts.js'
 
 /** Same-origin endpoint used by the desktop WebUI contribution. */
 export const DESKTOP_SETTINGS_PATH = '/dsh-desktop/settings'
 const MAX_BODY_BYTES = 1024
-const SHORTCUT_KEYS = new Set<keyof ShortcutSettings>(['desktop', 'appMenu', 'login'])
+const CREATE_TARGETS = new Set<ShortcutCreateTarget>(['desktop', 'appMenu'])
 
 export interface DesktopSettingsAccess {
   read(): ShortcutSettings
-  write(key: keyof ShortcutSettings, enabled: boolean): Promise<void>
+  create(target: ShortcutCreateTarget): Promise<void>
+  setLogin(enabled: boolean): Promise<void>
 }
 
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
@@ -38,10 +40,15 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
 }
 
-function isShortcutWrite(value: unknown): value is { key: keyof ShortcutSettings, enabled: boolean } {
+type ShortcutWrite =
+  | { action: 'create', target: ShortcutCreateTarget }
+  | { action: 'setLogin', enabled: boolean }
+
+function isShortcutWrite(value: unknown): value is ShortcutWrite {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
-  return SHORTCUT_KEYS.has(candidate.key as keyof ShortcutSettings) && typeof candidate.enabled === 'boolean'
+  if (candidate.action === 'create') return CREATE_TARGETS.has(candidate.target as ShortcutCreateTarget)
+  return candidate.action === 'setLogin' && typeof candidate.enabled === 'boolean'
 }
 
 /** Build the guarded host route without exposing unrelated desktop settings. */
@@ -73,7 +80,8 @@ export function createDesktopSettingsRoute(access: DesktopSettingsAccess, expect
           sendJson(res, 400, { error: 'invalid shortcut setting' })
           return
         }
-        await access.write(body.key, body.enabled)
+        if (body.action === 'create') await access.create(body.target)
+        else await access.setLogin(body.enabled)
         sendJson(res, 200, { shortcuts: access.read() })
       } catch {
         sendJson(res, 400, { error: 'invalid settings request' })
