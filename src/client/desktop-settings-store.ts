@@ -25,7 +25,7 @@ export class DesktopSettingsStore {
   private readonly listeners = new Set<() => void>()
   private tail: Promise<void> = Promise.resolve()
 
-  constructor(private readonly fetcher: Fetcher = globalThis.fetch) {}
+  constructor(private readonly fetcher: Fetcher = (input, init) => globalThis.fetch(input, init)) {}
 
   readonly getSnapshot = (): DesktopSettingsSnapshot => this.snapshot
 

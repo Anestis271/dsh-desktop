@@ -108,6 +108,8 @@ describe('desktop shortcut settings client', () => {
     }
 
     apply(ctx as never)
+    await vi.waitFor(() => { expect(fetcher).toHaveBeenCalledTimes(1) })
+    expect(fetcher.mock.contexts[0]).toBe(globalThis)
     expect(registerLocale).toHaveBeenCalledWith('settings.desktop', expect.objectContaining({ zh: expect.any(Object), en }))
     expect(injectSlot).toHaveBeenCalledWith('settings.general.item', expect.any(Function))
     const options = registerSlot.mock.calls[0]?.[0] as { id: string; inject: () => { setShortcut(key: 'desktop', enabled: boolean): void } }
