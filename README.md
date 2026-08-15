@@ -11,11 +11,11 @@
 
 `@anestis271/dsh-desktop` 不是另一套客户端，也不需要单独下载安装桌面程序。它只是一个轻量的 dsh 插件：保留官方 WebUI 的全部能力，在外面加上一层干净、原生的桌面外壳。
 
-## 界面预览
+## 预览
 
 ![DeepSeek Harness Desktop 界面预览](./docs/images/desktop-preview.png)
 
-## 为什么选择 dsh Desktop
+## 为什么选择本插件
 
 - **无需单独安装应用**：没有额外的 MSI、DMG 或 AppImage，只需安装一个 npm 插件。
 - **官方 WebUI 是唯一真源**：不复制、不分叉、不重新实现界面，dsh 更新后依然保持一致。
@@ -46,13 +46,13 @@ dsh --profile desktop
 
 ## 快捷入口
 
-桌面图标、应用菜单和登录启动均默认关闭。启动 dsh Desktop 后，可在官方 WebUI 的 **设置 → 通用 → 桌面快捷方式** 中按需开启。
+桌面图标、应用菜单和登录启动均默认关闭。启动 dsh Desktop 后，可在官方 WebUI 的 **设置 → 通用设置 → 桌面快捷入口** 中按需开启。
 
 这些入口仍然只启动 `dsh --profile desktop`，不会安装另一份应用，也不需要管理员权限。关闭选项后，插件只会移除由它自己创建的入口。
 
 ## 设计原则
 
-dsh Desktop 只做桌面外壳应该做的事。会话、设置、模型、工具和所有业务界面继续由 DeepSeek Harness 官方 WebUI 提供；插件不会建立一套需要额外维护的平行客户端。
+dsh-desktop 只做桌面外壳应该做的事。会话、设置、模型、工具和所有业务界面继续由 DeepSeek Harness 官方 WebUI 提供；插件不会建立一套需要额外维护的平行客户端。
 
 ## 许可证
 

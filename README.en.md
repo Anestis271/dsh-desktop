@@ -15,7 +15,7 @@ Turn the official DeepSeek Harness WebUI into a natural desktop experience.
 
 ![DeepSeek Harness Desktop preview](./docs/images/desktop-preview.png)
 
-## Why dsh Desktop
+## Why This Plugin
 
 - **No separate app installer**: no additional MSI, DMG, or AppImage; install one npm plugin and start dsh.
 - **The official WebUI stays the single source of truth**: no copied, forked, or reimplemented interface.
@@ -46,13 +46,13 @@ That is all. The first launch automatically prepares the desktop runtime for the
 
 ## Shortcuts
 
-Desktop icons, application-menu entries, and launch-at-login are disabled by default. After starting dsh Desktop, enable only the entries you need under **Settings → General → Desktop shortcuts** in the official WebUI.
+Desktop icons, application-menu entries, and launch-at-login are disabled by default. After starting dsh Desktop, enable only the entries you need under **Settings → General settings → Desktop shortcuts** in the official WebUI.
 
 Every entry still launches only `dsh --profile desktop`. It does not install another application or require administrator access. Disabling an option removes only the entry created by this plugin.
 
 ## Design Principle
 
-dsh Desktop does only what a desktop shell should do. Sessions, settings, models, tools, and every product interface continue to come from the official DeepSeek Harness WebUI, without creating a parallel client that must be maintained separately.
+dsh-desktop does only what a desktop shell should do. Sessions, settings, models, tools, and every product interface continue to come from the official DeepSeek Harness WebUI, without creating a parallel client that must be maintained separately.
 
 ## License
 
