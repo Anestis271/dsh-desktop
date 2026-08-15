@@ -63,6 +63,7 @@ describe('windows shortcut creation', () => {
     child.emit('exit', 0)
     await expect(pending).resolves.toBeUndefined()
     expect(spawnMock).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.objectContaining({ windowsHide: true }))
+    expect(spawnMock.mock.calls[0]?.[1]).toContain('[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[Console]::OutputEncoding; $s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; $l=$s.CreateShortcut($j.path); $l.TargetPath=$j.executable; $l.Arguments=$j.arguments; $l.WorkingDirectory=$j.cwd; $l.Description="DeepSeek Harness"; $l.Save()')
   })
 
   it('reports process errors and non-zero exits including stderr', async () => {
@@ -123,7 +124,11 @@ describe('shortcut reconciliation', () => {
     const calls: string[] = []
     await reconcileShortcuts({ desktop: true, appMenu: true, login: true }, {
       platform: 'win32', home: root, command,
-      runWindowsShortcut: async path => { calls.push(path); await mkdir(dirname(path), { recursive: true }); await writeFile(path, '') },
+      runWindowsShortcut: async path => {
+        await expect(stat(dirname(path))).resolves.toBeTruthy()
+        calls.push(path)
+        await writeFile(path, '')
+      },
     })
     expect(calls).toHaveLength(3)
     await expect(stat(`${shortcutPaths('win32', root).desktop}.dsh-owner`)).resolves.toBeTruthy()
@@ -132,10 +137,10 @@ describe('shortcut reconciliation', () => {
   it('uses the production Windows runner when no override is supplied', async () => {
     const root = await home()
     const paths = shortcutPaths('win32', root)
-    await mkdir(dirname(paths.desktop), { recursive: true })
     const child = new ProcessChild()
     spawnMock.mockReturnValue(child)
     const pending = reconcileShortcuts({ desktop: true, appMenu: false, login: false }, { platform: 'win32', home: root, command })
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledOnce() })
     child.emit('exit', 0)
     await expect(pending).resolves.toBeUndefined()
   })

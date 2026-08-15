@@ -98,7 +98,8 @@ async function removeOwned(path: string): Promise<void> {
 
 /** Create one Windows `.lnk` through the user-level WScript.Shell API. */
 export async function createWindowsShortcut(path: string, command: LaunchCommand): Promise<void> {
-  const script = '$s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; '
+  const script = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[Console]::OutputEncoding; '
+    + '$s=New-Object -ComObject WScript.Shell; $j=$env:DSH_SHORTCUT_JSON | ConvertFrom-Json; '
     + '$l=$s.CreateShortcut($j.path); $l.TargetPath=$j.executable; $l.Arguments=$j.arguments; '
     + '$l.WorkingDirectory=$j.cwd; $l.Description="DeepSeek Harness"; $l.Save()'
   const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
@@ -128,6 +129,7 @@ export async function reconcileShortcuts(settings: ShortcutSettings, deps: Short
       continue
     }
     if (deps.platform === 'win32') {
+      await ensureParent(path)
       await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command)
       await writeFile(markerPath(path), MARKER, { mode: 0o600 })
     } else if (deps.platform === 'darwin' && key === 'login') {

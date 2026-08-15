@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { homedir } from 'node:os'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DesktopController, { DESKTOP_SETTINGS_NAMESPACE, desktopLaunchCommand, desktopLocale, internals } from '../src/index.js'
@@ -68,7 +69,7 @@ describe('DesktopController', () => {
     })
     await vi.waitFor(() => { expect(internals.reconcileShortcuts).toHaveBeenCalledWith(
       { desktop: false, appMenu: false, login: false },
-      expect.objectContaining({ platform: process.platform }),
+      expect.objectContaining({ platform: process.platform, home: homedir() }),
     ) })
     await ctx.fiber.dispose()
   })
@@ -122,9 +123,14 @@ describe('DesktopController', () => {
     const reconcile = vi.fn()
       .mockRejectedValueOnce(new Error('disk unavailable'))
       .mockResolvedValue(undefined)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     internals.reconcileShortcuts = reconcile
     await ctx.plugin(DesktopController, {})
     await vi.waitFor(() => { expect(reconcile).toHaveBeenCalled() })
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith(
+      'dsh-desktop: shortcut reconciliation failed: %o',
+      expect.objectContaining({ message: 'disk unavailable' }),
+    ) })
     await ctx.settings.update(DESKTOP_SETTINGS_NAMESPACE, { shortcuts: { login: true } })
     await vi.waitFor(() => { expect(reconcile).toHaveBeenLastCalledWith(
       { desktop: false, appMenu: false, login: true },

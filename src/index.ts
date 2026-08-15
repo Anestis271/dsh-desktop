@@ -10,6 +10,7 @@ import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-sett
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { homedir } from 'node:os'
 import { launchDesktop, type DesktopLaunchOptions, type DesktopSession } from './runtime.js'
 import { reconcileShortcuts, type LaunchCommand } from './shortcuts.js'
 import type { DesktopLocale } from './protocol.js'
@@ -139,12 +140,14 @@ export class DesktopController extends Service {
   private queueShortcutSync(): void {
     const config = this.current()
     this.shortcutSync = this.shortcutSync
-      .catch(() => {})
       .then(() => internals.reconcileShortcuts(config.shortcuts, {
         platform: process.platform,
-        home: dshHomePath(),
+        home: homedir(),
         command: desktopLaunchCommand(),
       }))
+      .catch(error => {
+        this.ctx.logger.warn('dsh-desktop: shortcut reconciliation failed: %o', error)
+      })
   }
 }
 
