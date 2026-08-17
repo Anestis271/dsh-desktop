@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { downloadArtifact } from '@electron/get'
-import extract from 'extract-zip'
+import { Extract } from 'unzipper'
 import type { ResolvedConfig } from './index.js'
 import { isRuntimeChildMessage, type DesktopLocale, type RuntimeInitMessage, type RuntimeParentMessage } from './protocol.js'
 
@@ -65,7 +66,9 @@ const downloadElectron = (platform: NodeJS.Platform, arch: string): Promise<stri
     platform,
     arch,
   })
-const extractElectron = (archive: string, destination: string): Promise<void> => extract(archive, { dir: destination })
+const extractElectron = async (archive: string, destination: string): Promise<void> => {
+  await pipeline(createReadStream(archive), Extract({ path: destination }))
+}
 /* v8 ignore stop */
 
 /** Download seams kept mutable for deterministic artifact tests. */

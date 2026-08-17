@@ -25,14 +25,20 @@ This is not a separate client and does not require a standalone desktop installe
 
 ## Install
 
-Make sure dsh already runs on your machine, then use:
+Before installing, make sure:
+
+- Node.js satisfies `^22.19.0` or `>=24.0.0`
+- pnpm is installed and `pnpm --version` runs successfully in your terminal
+- dsh is installed and already runs successfully in your terminal
+
+Then use:
 
 ```bash
 dsh plugin --profile desktop add @anestis271/dsh-desktop
 dsh --profile desktop
 ```
 
-That is all. The first launch automatically prepares the desktop runtime for the current platform, and later launches reuse it without extra setup.
+On the first launch, the plugin downloads and extracts the Electron runtime for the current platform. The download size and duration depend on the platform and network connection. Extraction may continue briefly after the download reaches 100%, so do not interrupt the process. Once setup completes, later launches reuse the Electron cache stored in the profile and start normally without extra setup.
 
 ## Desktop Experience
 

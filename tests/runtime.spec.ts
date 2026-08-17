@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -50,6 +50,32 @@ const options: DesktopLaunchOptions = {
   locale: 'en',
   config,
   relaunchCommand: 'wscript.exe relaunch.vbs',
+}
+
+function storedZip(name: string, contents: Buffer): Buffer {
+  const fileName = Buffer.from(name)
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(20, 4)
+  local.writeUInt32LE(contents.length, 18)
+  local.writeUInt32LE(contents.length, 22)
+  local.writeUInt16LE(fileName.length, 26)
+
+  const central = Buffer.alloc(46)
+  central.writeUInt32LE(0x02014b50, 0)
+  central.writeUInt16LE(20, 4)
+  central.writeUInt16LE(20, 6)
+  central.writeUInt32LE(contents.length, 20)
+  central.writeUInt32LE(contents.length, 24)
+  central.writeUInt16LE(fileName.length, 28)
+
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(1, 8)
+  end.writeUInt16LE(1, 10)
+  end.writeUInt32LE(central.length + fileName.length, 12)
+  end.writeUInt32LE(local.length + fileName.length + contents.length, 16)
+  return Buffer.concat([local, fileName, contents, central, fileName, end])
 }
 
 function dependencies(child: FakeChild): RuntimeDependencies {
@@ -110,6 +136,21 @@ describe('runtime launcher', () => {
     expect(electronRuntimePath('C:/profile', 'win32', 'x64')).toBe(
       join('C:/profile', 'desktop-shell', 'electron', '43.4.0-win32-x64', 'electron.exe'),
     )
+  })
+
+  it('extracts archives larger than the legacy fd-slicer stream boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-extract-'))
+    const archive = join(root, 'electron.zip')
+    const destination = join(root, 'runtime')
+    const executable = Buffer.alloc(200_000, 0x5a)
+    try {
+      await writeFile(archive, storedZip('electron.exe', executable))
+      await originalExtract(archive, destination)
+      expect(await readFile(join(destination, 'electron.exe'))).toEqual(executable)
+      await expect(originalExtract(join(root, 'missing.zip'), destination)).rejects.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('installs one verified runtime atomically and reuses it', async () => {

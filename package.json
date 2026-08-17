@@ -1,6 +1,6 @@
 {
   "name": "@anestis271/dsh-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Cross-platform desktop shell for DeepSeek Harness",
   "author": "anestis271",
   "type": "module",
@@ -62,9 +62,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@electron/get": "^5.1.0",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "extract-zip": "^2.0.1"
+    "@electron/get": "^5.1.0",
+    "unzipper": "^0.12.5"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -92,6 +92,7 @@
     "@deepseek-ai/dsh-web-app": "^0.1.0-rc.6",
     "@types/node": "^25.0.0",
     "@types/react": "^18.3.31",
+    "@types/unzipper": "^0.10.11",
     "@vitest/coverage-v8": "^3.2.4",
     "esbuild": "^0.25.12",
     "lightningcss": "^1.33.0",
