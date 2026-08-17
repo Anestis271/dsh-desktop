@@ -39,11 +39,11 @@ function installDragRegion() {
   const style = document.createElement('style')
   const rightControls = process.argv.includes('--dsh-desktop-right-controls')
   const right = rightControls ? '270px' : '0'
-  const utilitiesClearance = rightControls
+  const nativeControlsClearance = rightControls
     ? `header:has([data-slot='conversation.session.header.utilities']){padding-right:148px!important}`
-      + `header :has(>[data-slot='conversation.session.header.utilities']){position:relative;z-index:2147483647;-webkit-app-region:no-drag}`
     : ''
-  style.textContent = `#dsh-desktop-titlebar-drag-region{position:fixed;top:0;left:50%;right:${right};height:36px;z-index:2147483646;-webkit-app-region:drag;user-select:none}${utilitiesClearance}`
+  const utilitiesInteraction = `header :has(>[data-slot='conversation.session.header.utilities']){position:relative;z-index:2147483647;-webkit-app-region:no-drag}`
+  style.textContent = `#dsh-desktop-titlebar-drag-region{position:fixed;top:0;left:50%;right:${right};height:36px;z-index:2147483646;-webkit-app-region:drag;user-select:none}${nativeControlsClearance}${utilitiesInteraction}`
   document.head.append(style)
   document.body.append(region)
   trackSidebarEdge(region)

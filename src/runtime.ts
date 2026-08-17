@@ -1,13 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { createReadStream, existsSync } from 'node:fs'
-import { mkdir, rename, rm } from 'node:fs/promises'
+import { constants, createWriteStream, existsSync } from 'node:fs'
+import { access, chmod, mkdir, rename, rm, symlink } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { downloadArtifact } from '@electron/get'
-import { Extract } from 'unzipper'
+import { Open, type File as ZipFile } from 'unzipper'
 import type { ResolvedConfig } from './index.js'
 import { isRuntimeChildMessage, type DesktopLocale, type RuntimeInitMessage, type RuntimeParentMessage } from './protocol.js'
 
@@ -58,6 +58,9 @@ interface StreamChild {
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000
 const DEFAULT_STOP_TIMEOUT_MS = 5_000
 const ELECTRON_VERSION = '43.4.0'
+const UNIX_FILE_TYPE_MASK = 0o170000
+const UNIX_DIRECTORY = 0o040000
+const UNIX_SYMLINK = 0o120000
 
 /* v8 ignore start -- production download boundaries; tests replace these seams */
 const downloadElectron = (platform: NodeJS.Platform, arch: string): Promise<string> => downloadArtifact({
@@ -66,8 +69,78 @@ const downloadElectron = (platform: NodeJS.Platform, arch: string): Promise<stri
     platform,
     arch,
   })
+
+interface DeferredSymlink {
+  path: string
+  target: string
+}
+
+function archivePath(destination: string, entryPath: string): string {
+  const root = resolve(destination)
+  const path = resolve(root, entryPath.replaceAll('\\', '/'))
+  const local = relative(root, path)
+  if (local === '' || local.startsWith('..') || isAbsolute(local)) {
+    throw new Error(`dsh-desktop: unsafe Electron archive path: ${entryPath}`)
+  }
+  return path
+}
+
+function unixMode(entry: ZipFile): number {
+  return entry.versionMadeBy >>> 8 === 3 ? entry.externalFileAttributes >>> 16 : 0
+}
+
+function safeSymlinkTarget(destination: string, path: string, target: string): string {
+  if (target.includes('\0') || isAbsolute(target)) {
+    throw new Error(`dsh-desktop: unsafe Electron archive link: ${target}`)
+  }
+  const root = resolve(destination)
+  const resolvedTarget = resolve(dirname(path), target)
+  const local = relative(root, resolvedTarget)
+  if (local === '' || local.startsWith('..') || isAbsolute(local)) {
+    throw new Error(`dsh-desktop: unsafe Electron archive link: ${target}`)
+  }
+  return target
+}
+
+const openElectronArchive = (archive: string) => Open.file(archive)
+
+/** Archive seams kept mutable so Windows tests can verify POSIX metadata. */
+export const electronArchiveInternals = {
+  open: openElectronArchive,
+  chmod,
+  symlink,
+}
+
 const extractElectron = async (archive: string, destination: string): Promise<void> => {
-  await pipeline(createReadStream(archive), Extract({ path: destination }))
+  const directory = await electronArchiveInternals.open(archive)
+  const directories: Array<{ path: string; mode: number }> = []
+  const links: DeferredSymlink[] = []
+  await mkdir(destination, { recursive: true })
+
+  for (const entry of directory.files) {
+    const path = archivePath(destination, entry.path)
+    const mode = unixMode(entry)
+    const type = mode & UNIX_FILE_TYPE_MASK
+    if (entry.type === 'Directory' || type === UNIX_DIRECTORY) {
+      await mkdir(path, { recursive: true })
+      directories.push({ path, mode: mode & 0o777 })
+      continue
+    }
+    await mkdir(dirname(path), { recursive: true })
+    if (type === UNIX_SYMLINK) {
+      const target = safeSymlinkTarget(destination, path, (await entry.buffer()).toString('utf8'))
+      links.push({ path, target })
+      continue
+    }
+    await pipeline(entry.stream(), createWriteStream(path))
+    if ((mode & 0o777) !== 0) await electronArchiveInternals.chmod(path, mode & 0o777)
+  }
+
+  for (const link of links) await electronArchiveInternals.symlink(link.target, link.path)
+  directories.sort((left, right) => right.path.length - left.path.length)
+  for (const directory of directories) {
+    if (directory.mode !== 0) await electronArchiveInternals.chmod(directory.path, directory.mode)
+  }
 }
 /* v8 ignore stop */
 
@@ -76,6 +149,18 @@ export const electronInternals = {
   download: downloadElectron,
   extract: extractElectron,
   nonce: randomUUID,
+  access,
+}
+
+async function usableElectron(executable: string, platform: NodeJS.Platform): Promise<boolean> {
+  if (!existsSync(executable)) return false
+  if (platform === 'win32') return true
+  try {
+    await electronInternals.access(executable, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Relative executable location used by Electron release archives. */
@@ -114,7 +199,8 @@ export async function resolveElectronPath(
   const relative = electronExecutable(platform)
   const destination = join(profileDir, 'desktop-shell', 'electron', `${ELECTRON_VERSION}-${platform}-${arch}`)
   const executable = electronRuntimePath(profileDir, platform, arch)
-  if (existsSync(executable)) return executable
+  if (await usableElectron(executable, platform)) return executable
+  await rm(destination, { recursive: true, force: true })
 
   await mkdir(dirname(destination), { recursive: true })
   const staging = `${destination}.tmp-${electronInternals.nonce()}`
@@ -128,7 +214,7 @@ export async function resolveElectronPath(
     try {
       await rename(staging, destination)
     } catch (error) {
-      if (!existsSync(executable)) throw error
+      if (!await usableElectron(executable, platform)) throw error
     }
     return executable
   } finally {

@@ -168,7 +168,7 @@ dsh --profile desktop
 
 - Windows：用户级桌面/开始菜单 `.lnk`，显式引用插件的多尺寸 `.ico`；通过随包提供的 `wscript.exe` 薄桥接层隐藏 Node 控制台窗口，不写系统级目录。
 - Linux：用户级 freedesktop `.desktop` 文件，正确转义 `Exec` 并按需设置 executable bit。
-- macOS：用户级、无需重新签名的快捷入口或 alias；不伪造已签名 `.app` bundle。
+- macOS：通过系统 `osacompile` 生成只封装启动命令的用户级 AppleScript 快捷应用；它不携带 Electron 或业务代码，不伪造已签名的发行 `.app` bundle，也不会打开 Terminal。
 - 登录启动：仅在用户显式开启时，通过平台推荐的用户级机制调用同一 dsh 命令。
 
 Windows 运行窗口还应通过 `BrowserWindow.setAppDetails()` 发布与 `.lnk` 一致的 AppUserModelID、图标、显示名和隐藏 relaunch command。完整 activation probe 与 Node/dsh 回退参数写入 profile 内部的 `desktop-shell/relaunch.vbs`，Property Store 只保存短 `wscript.exe` 命令，防止超长绝对路径被拒绝并回退到未打包的宿主 `electron.exe`。

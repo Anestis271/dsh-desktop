@@ -224,10 +224,10 @@ describe('desktopLaunchCommand', () => {
   })
 
   it('targets the current dsh entry with the desktop profile', () => {
-    expect(desktopLaunchCommand()).toEqual({
+    expect(desktopLaunchCommand('C:/profile')).toEqual({
       executable: process.execPath,
       args: [process.argv[1], '--profile', 'desktop'],
-      cwd: process.cwd(),
+      cwd: 'C:/profile',
     })
     expect(desktopWindowsActivation('C:/profile')).toEqual({
       electronPath: expect.stringMatching(/desktop-shell[\\/]electron/),
@@ -241,5 +241,18 @@ describe('desktopLaunchCommand', () => {
     process.argv.splice(1, 1)
     expect(desktopLaunchCommand().args[0]).toBe('dsh')
     process.argv.splice(1, 0, entry as string)
+  })
+
+  it('preserves a custom dsh home for detached launchers', () => {
+    const current = process.env.DSH_HOME
+    process.env.DSH_HOME = '/Volumes/custom/dsh'
+    try {
+      expect(desktopLaunchCommand('/Volumes/custom/dsh/profiles/desktop').environment).toEqual({
+        DSH_HOME: '/Volumes/custom/dsh',
+      })
+    } finally {
+      if (current === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = current
+    }
   })
 })

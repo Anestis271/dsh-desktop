@@ -54,7 +54,9 @@ dsh --profile desktop
 
 启动 dsh Desktop 后，可在官方 WebUI 的 **设置 → 通用设置** 中按需创建桌面快捷方式和应用菜单入口；登录时启动默认关闭，可在同一位置开启。
 
-这些入口仍然只启动 `dsh --profile desktop`，不会安装另一份应用，也不需要管理员权限。登录启动关闭后，插件只会移除由它自己创建的入口。
+这些入口仍然只启动 `dsh --profile desktop`，不会安装另一份 Electron，也不需要管理员权限。macOS 使用系统自带的 `osacompile` 生成本地 AppleScript 快捷应用，因此从桌面或 Applications 启动时不会额外打开 Terminal。登录启动关闭后，插件只会移除由它自己创建的入口。
+
+macOS 的首次真机验收步骤见 [`docs/MACOS_SMOKE_TEST.md`](./docs/MACOS_SMOKE_TEST.md)。
 
 ## 设计原则
 

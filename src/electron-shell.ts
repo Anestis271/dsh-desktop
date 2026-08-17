@@ -17,6 +17,7 @@ export interface BrowserWindowLike {
   reload(): void
   isVisible(): boolean
   setTitle(title: string): void
+  setBackgroundColor(color: string): void
   setAppDetails(options: WindowsAppDetails): void
   setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void
   webContents: {
@@ -45,6 +46,11 @@ export interface TrayLike {
 /** Menu object returned by Electron. */
 export interface MenuLike {}
 
+/** Native image operations used for adaptive macOS status items. */
+export interface NativeImageLike {
+  setTemplateImage(template: boolean): void
+}
+
 /** Electron surface required by the shell. */
 export interface ElectronApi {
   app: {
@@ -55,11 +61,12 @@ export interface ElectronApi {
     whenReady(): Promise<void>
     on(event: string, listener: (...args: never[]) => void): void
     quit(): void
+    dock?: { setIcon(image: NativeImageLike): void }
   }
   BrowserWindow: new (options: Record<string, unknown>) => BrowserWindowLike
   Tray: new (image: unknown) => TrayLike
   Menu: { buildFromTemplate(template: readonly MenuItem[]): MenuLike }
-  nativeImage: { createFromPath(path: string): unknown }
+  nativeImage: { createFromPath(path: string): NativeImageLike }
   shell: { openPath(path: string): Promise<string> }
 }
 
@@ -104,11 +111,17 @@ export interface StreamLike {
 const PRELOAD_PATH = fileURLToPath(new URL('./electron-preload.cjs', import.meta.url))
 const ICON_PNG_PATH = fileURLToPath(new URL('../assets/dsh-desktop.png', import.meta.url))
 const ICON_ICO_PATH = fileURLToPath(new URL('../assets/dsh-desktop.ico', import.meta.url))
+const ICON_TEMPLATE_PATH = fileURLToPath(new URL('../assets/dsh-desktopTemplate.png', import.meta.url))
 const WINDOWS_APP_ID = 'com.anestis271.dsh-desktop'
 
 /** Select the native multi-resolution format where Windows shell surfaces need it. */
 export function desktopIconPath(platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? ICON_ICO_PATH : ICON_PNG_PATH
+}
+
+/** Select a monochrome template image for the macOS menu bar. */
+export function trayIconPath(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'darwin' ? ICON_TEMPLATE_PATH : desktopIconPath(platform)
 }
 
 /** Accept only colors emitted by the official theme metadata presenter. */
@@ -245,9 +258,11 @@ export async function runElectronShell(
     tray?.destroy()
   })
   api.app.on('second-instance', () => { showWindow() })
+  if (platform === 'darwin') api.app.on('activate', () => { showWindow() })
   await api.app.whenReady()
 
   const icon = api.nativeImage.createFromPath(desktopIconPath(platform))
+  if (platform === 'darwin') api.app.dock?.setIcon(icon)
   window = new api.BrowserWindow({
     ...windowOptions(platform),
     title: init.config.title,
@@ -279,8 +294,9 @@ export async function runElectronShell(
     })
   }
   window.webContents.on('ipc-message', (_event, channel, ...args) => {
-    if (channel !== 'dsh-desktop-theme' || !isThemeColor(args[0]) || platform === 'darwin') return
-    window?.setTitleBarOverlay({ color: args[0], symbolColor: titleBarSymbolColor(args[0]), height: 36 })
+    if (channel !== 'dsh-desktop-theme' || !isThemeColor(args[0])) return
+    if (platform === 'darwin') window?.setBackgroundColor(args[0])
+    else window?.setTitleBarOverlay({ color: args[0], symbolColor: titleBarSymbolColor(args[0]), height: 36 })
   })
   window.on('close', (event: CloseEventLike) => {
     if (!quitting && init.config.closeToTray) {
@@ -290,7 +306,9 @@ export async function runElectronShell(
   })
   window.on('closed', () => { window = undefined })
 
-  tray = new api.Tray(icon)
+  const trayIcon = api.nativeImage.createFromPath(trayIconPath(platform))
+  if (platform === 'darwin') trayIcon.setTemplateImage(true)
+  tray = new api.Tray(trayIcon)
   tray.setToolTip(init.config.title)
   installTrayMenu()
   tray.on('click', toggleWindow)

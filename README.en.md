@@ -54,7 +54,9 @@ On the first launch, the plugin downloads and extracts the Electron runtime for 
 
 After starting dsh Desktop, create desktop and application-menu entries as needed under **Settings → General** in the official WebUI. Launch at login is disabled by default and can be enabled in the same place.
 
-Every entry still launches only `dsh --profile desktop`. It does not install another application or require administrator access. Disabling launch at login removes only the entry created by this plugin.
+Every entry still launches only `dsh --profile desktop`. It does not install another Electron runtime or require administrator access. On macOS, the system `osacompile` tool creates a local AppleScript shortcut app, so launching from the Desktop or Applications does not open Terminal. Disabling launch at login removes only the entry created by this plugin.
+
+For the first native macOS verification, follow [`docs/MACOS_SMOKE_TEST.md`](./docs/MACOS_SMOKE_TEST.md).
 
 ## Design Principle
 

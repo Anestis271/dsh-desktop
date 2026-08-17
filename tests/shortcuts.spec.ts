@@ -10,9 +10,12 @@ vi.mock('node:child_process', () => ({ spawn: spawnMock }))
 
 import {
   MARKER,
+  createMacShortcut,
   createWindowsShortcut,
   desktopEntry,
   launchAgent,
+  macShortcutAppleScript,
+  quoteShellArgument,
   reconcileShortcut,
   shortcutPaths,
   taskbarRelaunchCommand,
@@ -47,8 +50,8 @@ describe('shortcut serialization', () => {
   it('resolves platform-specific user locations', () => {
     expect(shortcutPaths('win32', 'C:\\Users\\Ada').desktop).toContain('Desktop')
     expect(shortcutPaths('darwin', '/Users/Ada')).toEqual({
-      desktop: join('/Users/Ada', 'Desktop', 'DeepSeek Harness.command'),
-      appMenu: join('/Users/Ada', 'Applications', 'DeepSeek Harness.command'),
+      desktop: join('/Users/Ada', 'Desktop', 'DeepSeek Harness.app'),
+      appMenu: join('/Users/Ada', 'Applications', 'DeepSeek Harness.app'),
       login: join('/Users/Ada', 'Library', 'LaunchAgents', 'com.anestis271.dsh-desktop.plist'),
     })
     expect(shortcutPaths('linux', '/home/ada').appMenu).toBe(join('/home/ada', '.local', 'share', 'applications', 'com.anestis271.dsh-desktop.desktop'))
@@ -56,11 +59,30 @@ describe('shortcut serialization', () => {
 
   it('serializes freedesktop and launch-agent entries safely', () => {
     const entry = desktopEntry(command)
-    expect(entry).toContain('Exec="C:\\\\Program Files\\\\dsh\\\\dsh.exe" "--profile" "desktop" "--title" "A \\\"quoted\\\" title"')
+    expect(entry).toContain('Exec="/usr/bin/env" "C:\\\\Program Files\\\\dsh\\\\dsh.exe" "--profile" "desktop" "--title" "A \\\"quoted\\\" title"')
     expect(entry).toContain(`X-dsh-owner=${MARKER}`)
-    const agent = launchAgent({ executable: 'tool<&', args: ['a&b'], cwd: '/tmp' })
+    const agent = launchAgent({
+      executable: 'tool<&',
+      args: ['a&b'],
+      cwd: '/tmp/a&b<work>',
+      environment: { DSH_HOME: '/tmp/home<&>' },
+    })
     expect(agent).toContain('tool&lt;&amp;')
     expect(agent).toContain('a&amp;b')
+    expect(agent).toContain('/tmp/a&amp;b&lt;work&gt;')
+    expect(agent).toContain('<key>DSH_HOME</key><string>/tmp/home&lt;&amp;&gt;</string>')
+    expect(launchAgent(command)).not.toContain('EnvironmentVariables')
+
+    expect(quoteShellArgument("a'$`b")).toBe("'a'\"'\"'$`b'")
+    const appleScript = macShortcutAppleScript({
+      executable: '/tmp/$node',
+      args: ['`unsafe`', "single'quote"],
+      cwd: '/tmp/a&b',
+      environment: { DSH_HOME: '/tmp/$home' },
+    })
+    expect(appleScript).toContain("'/tmp/$node' '`unsafe`' 'single'\\\"'\\\"'quote'")
+    expect(appleScript).toContain("'DSH_HOME=/tmp/$home'")
+    expect(appleScript).toContain('/usr/bin/nohup')
   })
 
   it('quotes every argument passed through the Windows launcher', () => {
@@ -149,6 +171,53 @@ describe('windows shortcut creation', () => {
   })
 })
 
+describe('macOS shortcut creation', () => {
+  it('compiles and atomically installs an AppleScript app', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-mac-shortcut-'))
+    roots.push(root)
+    const target = join(root, 'Applications', 'DeepSeek Harness.app')
+    const child = new ProcessChild()
+    spawnMock.mockReturnValue(child)
+    const pending = createMacShortcut(target, command)
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledOnce() })
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    expect(spawnMock.mock.calls[0]?.[0]).toBe('/usr/bin/osacompile')
+    expect(args).toContain('-e')
+    await mkdir(args[1] as string, { recursive: true })
+    child.emit('exit', 0)
+    await expect(pending).resolves.toBeUndefined()
+    await expect(stat(target)).resolves.toMatchObject({ isDirectory: expect.any(Function) })
+  })
+
+  it('reports compiler process and diagnostic failures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-mac-shortcut-'))
+    roots.push(root)
+    const target = join(root, 'DeepSeek Harness.app')
+
+    const errorChild = new ProcessChild()
+    spawnMock.mockReturnValue(errorChild)
+    const errorPending = createMacShortcut(target, command)
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledTimes(1) })
+    errorChild.emit('error', new Error('osacompile unavailable'))
+    await expect(errorPending).rejects.toThrow('osacompile unavailable')
+
+    const failedChild = new ProcessChild()
+    spawnMock.mockReturnValue(failedChild)
+    const failedPending = createMacShortcut(target, command)
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledTimes(2) })
+    failedChild.stderr.emit('data', 'compile failed')
+    failedChild.emit('exit', 1)
+    await expect(failedPending).rejects.toThrow('compile failed')
+
+    const quietChild = new ProcessChild()
+    spawnMock.mockReturnValue(quietChild)
+    const quietPending = createMacShortcut(target, command)
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledTimes(3) })
+    quietChild.emit('exit', 1)
+    await expect(quietPending).rejects.toThrow('shortcut creation failed')
+  })
+})
+
 describe('shortcut reconciliation', () => {
   async function home(): Promise<string> {
     const path = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
@@ -177,11 +246,54 @@ describe('shortcut reconciliation', () => {
   it('writes macOS command and launch-agent variants', async () => {
     const root = await home()
     const paths = shortcutPaths('darwin', root)
-    await reconcileShortcut('desktop', true, { platform: 'darwin', home: root, command })
-    await reconcileShortcut('appMenu', true, { platform: 'darwin', home: root, command })
-    await reconcileShortcut('login', true, { platform: 'darwin', home: root, command })
-    await expect(readFile(paths.desktop, 'utf8')).resolves.toContain('#!/bin/sh')
+    const runMacShortcut = async (path: string): Promise<void> => { await mkdir(path, { recursive: true }) }
+    await reconcileShortcut('desktop', true, { platform: 'darwin', home: root, command, runMacShortcut })
+    await reconcileShortcut('desktop', true, { platform: 'darwin', home: root, command, runMacShortcut })
+    await reconcileShortcut('appMenu', true, { platform: 'darwin', home: root, command, runMacShortcut })
+    await reconcileShortcut('login', true, { platform: 'darwin', home: root, command, runMacShortcut })
+    await expect(stat(paths.desktop)).resolves.toMatchObject({ isDirectory: expect.any(Function) })
+    await expect(readFile(`${paths.desktop}.dsh-owner`, 'utf8')).resolves.toBe(MARKER)
     await expect(readFile(paths.login, 'utf8')).resolves.toContain('<key>RunAtLoad</key>')
+  })
+
+  it('uses the production macOS compiler when no override is supplied', async () => {
+    const root = await home()
+    const target = shortcutPaths('darwin', root).appMenu
+    const child = new ProcessChild()
+    spawnMock.mockReturnValue(child)
+    const pending = reconcileShortcut('appMenu', true, { platform: 'darwin', home: root, command })
+    await vi.waitFor(() => { expect(spawnMock).toHaveBeenCalledOnce() })
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    await mkdir(args[1] as string, { recursive: true })
+    child.emit('exit', 0)
+    await expect(pending).resolves.toBeUndefined()
+    await expect(readFile(`${target}.dsh-owner`, 'utf8')).resolves.toBe(MARKER)
+  })
+
+  it('refuses to replace shortcuts not owned by this plugin', async () => {
+    const root = await home()
+    const path = shortcutPaths('darwin', root).desktop
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'user data')
+    await expect(reconcileShortcut('desktop', true, {
+      platform: 'darwin', home: root, command, runMacShortcut: async () => {},
+    })).rejects.toThrow(/refusing to overwrite/)
+    await expect(readFile(path, 'utf8')).resolves.toBe('user data')
+  })
+
+  it('propagates unexpected shortcut and marker inspection failures', async () => {
+    await expect(reconcileShortcut('desktop', true, {
+      platform: 'darwin', home: '\0', command, runMacShortcut: async () => {},
+    })).rejects.toThrow()
+
+    const root = await home()
+    const path = shortcutPaths('darwin', root).desktop
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'user data')
+    await mkdir(`${path}.dsh-owner`)
+    await expect(reconcileShortcut('desktop', true, {
+      platform: 'darwin', home: root, command, runMacShortcut: async () => {},
+    })).rejects.toThrow()
   })
 
   it('creates Windows entries through the injectable runner', async () => {

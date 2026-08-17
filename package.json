@@ -1,6 +1,6 @@
 {
   "name": "@anestis271/dsh-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Cross-platform desktop shell for DeepSeek Harness",
   "author": "anestis271",
   "type": "module",
@@ -25,6 +25,7 @@
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "assets",
+    "docs/MACOS_SMOKE_TEST.md",
     "README.en.md"
   ],
   "scripts": {

@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events'
+import { Readable } from 'node:stream'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isRuntimeChildMessage, isRuntimeInitMessage, isRuntimeLocaleMessage, isRuntimeShutdownMessage } from '../src/protocol.js'
-import { electronExecutable, electronInternals, electronRuntimePath, ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, runtimeInternals, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
+import { electronArchiveInternals, electronExecutable, electronInternals, electronRuntimePath, ignoreControlSocketError, launchDesktop, openControlServer, productionRuntimeDependencies, resolveElectronPath, runtimeInternals, type DesktopLaunchOptions, type RuntimeDependencies } from '../src/runtime.js'
 
 class FakeChild extends EventEmitter {
   readonly sent: unknown[] = []
@@ -52,7 +53,7 @@ const options: DesktopLaunchOptions = {
   relaunchCommand: 'wscript.exe relaunch.vbs',
 }
 
-function storedZip(name: string, contents: Buffer): Buffer {
+function storedZip(name: string, contents: Buffer, unixMode?: number): Buffer {
   const fileName = Buffer.from(name)
   const local = Buffer.alloc(30)
   local.writeUInt32LE(0x04034b50, 0)
@@ -63,11 +64,12 @@ function storedZip(name: string, contents: Buffer): Buffer {
 
   const central = Buffer.alloc(46)
   central.writeUInt32LE(0x02014b50, 0)
-  central.writeUInt16LE(20, 4)
+  central.writeUInt16LE(unixMode === undefined ? 20 : (3 << 8) | 20, 4)
   central.writeUInt16LE(20, 6)
   central.writeUInt32LE(contents.length, 20)
   central.writeUInt32LE(contents.length, 24)
   central.writeUInt16LE(fileName.length, 28)
+  if (unixMode !== undefined) central.writeUInt32LE((unixMode * 0x10000) >>> 0, 38)
 
   const end = Buffer.alloc(22)
   end.writeUInt32LE(0x06054b50, 0)
@@ -91,6 +93,10 @@ function dependencies(child: FakeChild): RuntimeDependencies {
 const originalDownload = electronInternals.download
 const originalExtract = electronInternals.extract
 const originalNonce = electronInternals.nonce
+const originalAccess = electronInternals.access
+const originalArchiveOpen = electronArchiveInternals.open
+const originalArchiveChmod = electronArchiveInternals.chmod
+const originalArchiveSymlink = electronArchiveInternals.symlink
 const originalProductionDependencies = runtimeInternals.productionDependencies
 
 afterEach(() => {
@@ -98,6 +104,10 @@ afterEach(() => {
   electronInternals.download = originalDownload
   electronInternals.extract = originalExtract
   electronInternals.nonce = originalNonce
+  electronInternals.access = originalAccess
+  electronArchiveInternals.open = originalArchiveOpen
+  electronArchiveInternals.chmod = originalArchiveChmod
+  electronArchiveInternals.symlink = originalArchiveSymlink
   runtimeInternals.productionDependencies = originalProductionDependencies
 })
 
@@ -153,6 +163,64 @@ describe('runtime launcher', () => {
     }
   })
 
+  it('restores Unix executable modes and deferred framework symlinks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-posix-'))
+    const chmodMock = vi.fn(async () => {})
+    const symlinkMock = vi.fn(async () => {})
+    electronArchiveInternals.chmod = chmodMock
+    electronArchiveInternals.symlink = symlinkMock
+    try {
+      const executableArchive = join(root, 'electron.zip')
+      const executablePath = join('Electron.app', 'Contents', 'MacOS', 'Electron')
+      await writeFile(executableArchive, storedZip(executablePath, Buffer.from('binary'), 0o100755))
+      await originalExtract(executableArchive, join(root, 'executable'))
+      expect(chmodMock).toHaveBeenCalledWith(join(root, 'executable', executablePath), 0o755)
+
+      const linkArchive = join(root, 'framework.zip')
+      const linkPath = join('Electron.app', 'Contents', 'Frameworks', 'Electron Framework.framework', 'Versions', 'Current')
+      await writeFile(linkArchive, storedZip(linkPath, Buffer.from('A'), 0o120777))
+      await originalExtract(linkArchive, join(root, 'framework'))
+      expect(symlinkMock).toHaveBeenCalledWith('A', join(root, 'framework', linkPath))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects archive paths and symlink targets outside the runtime directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-unsafe-'))
+    try {
+      const pathArchive = join(root, 'path.zip')
+      await writeFile(pathArchive, storedZip('../outside', Buffer.from('bad')))
+      await expect(originalExtract(pathArchive, join(root, 'path'))).rejects.toThrow(/unsafe Electron archive path/)
+
+      const linkArchive = join(root, 'link.zip')
+      await writeFile(linkArchive, storedZip('Electron.app/link', Buffer.from('../../outside'), 0o120777))
+      await expect(originalExtract(linkArchive, join(root, 'link'))).rejects.toThrow(/unsafe Electron archive link/)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('extracts files from injectable central-directory entries', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-entry-'))
+    electronArchiveInternals.open = vi.fn(async () => ({
+      files: [{
+        path: 'runtime.bin',
+        type: 'File' as const,
+        versionMadeBy: 20,
+        externalFileAttributes: 0,
+        stream: () => Readable.from('runtime'),
+        buffer: async () => Buffer.from('runtime'),
+      }],
+    })) as typeof electronArchiveInternals.open
+    try {
+      await originalExtract('unused.zip', root)
+      await expect(readFile(join(root, 'runtime.bin'), 'utf8')).resolves.toBe('runtime')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('installs one verified runtime atomically and reuses it', async () => {
     const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
     electronInternals.nonce = () => 'test'
@@ -172,6 +240,43 @@ describe('runtime launcher', () => {
     expect(production.electronPath).toBe(first)
     expect(production.entryPath).toContain('electron-entry.cjs')
     await rm(profile, { recursive: true, force: true })
+  })
+
+  it('replaces a cached POSIX runtime that is not executable', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
+    const executable = electronRuntimePath(profile, 'darwin', 'arm64')
+    await mkdir(dirname(executable), { recursive: true })
+    await writeFile(executable, 'broken')
+    electronInternals.access = vi.fn(async () => { throw Object.assign(new Error('not executable'), { code: 'EACCES' }) })
+    electronInternals.download = vi.fn(async () => 'electron.zip')
+    electronInternals.extract = vi.fn(async (_archive, destination) => {
+      const staged = join(destination, electronExecutable('darwin'))
+      await mkdir(dirname(staged), { recursive: true })
+      await writeFile(staged, 'fixed')
+    })
+    try {
+      await expect(resolveElectronPath(profile, 'darwin', 'arm64')).resolves.toBe(executable)
+      expect(electronInternals.download).toHaveBeenCalledOnce()
+      await expect(readFile(executable, 'utf8')).resolves.toBe('fixed')
+    } finally {
+      await rm(profile, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses a cached POSIX runtime after an executable access check', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-desktop-electron-'))
+    const executable = electronRuntimePath(profile, 'darwin', 'arm64')
+    await mkdir(dirname(executable), { recursive: true })
+    await writeFile(executable, 'ready')
+    electronInternals.access = vi.fn(async () => {})
+    electronInternals.download = vi.fn(async () => 'unused.zip')
+    try {
+      await expect(resolveElectronPath(profile, 'darwin', 'arm64')).resolves.toBe(executable)
+      expect(electronInternals.access).toHaveBeenCalled()
+      expect(electronInternals.download).not.toHaveBeenCalled()
+    } finally {
+      await rm(profile, { recursive: true, force: true })
+    }
   })
 
   it('rejects incomplete archives and preserves a concurrent completed install', async () => {

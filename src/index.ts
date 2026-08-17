@@ -190,11 +190,13 @@ export const internals: {
 }
 
 /** Build the portable command used by all optional user-level entry points. */
-export function desktopLaunchCommand(): LaunchCommand {
+export function desktopLaunchCommand(profileDir: string = dshHomePath('profiles', 'desktop')): LaunchCommand {
+  const dshHome = process.env.DSH_HOME
   return {
     executable: process.execPath,
     args: [process.argv[1] ?? 'dsh', '--profile', 'desktop'],
-    cwd: process.cwd(),
+    cwd: profileDir,
+    ...(dshHome === undefined ? {} : { environment: { DSH_HOME: dshHome } }),
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProcessBridge, createStreamBridge, desktopIconPath, isThemeColor, runElectronShell, titleBarSymbolColor, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike, type WindowsAppDetails } from '../src/electron-shell.js'
+import { createProcessBridge, createStreamBridge, desktopIconPath, isThemeColor, runElectronShell, titleBarSymbolColor, trayIconPath, windowOptions, type BrowserWindowLike, type ElectronApi, type MenuLike, type ProcessBridge, type ProcessLike, type TrayLike, type WindowsAppDetails } from '../src/electron-shell.js'
 
 class FakeBridge implements ProcessBridge {
   private readonly listeners = new Set<(message: unknown) => void>()
@@ -26,6 +26,7 @@ class FakeApp {
   quitCount = 0
   appUserModelId = ''
   ready = Promise.resolve()
+  readonly dock = { setIcon: vi.fn() }
 
   setName(_name: string): void {}
   setAppUserModelId(id: string): void { this.appUserModelId = id }
@@ -46,6 +47,7 @@ class FakeWindow implements BrowserWindowLike {
   loading: Promise<void> = Promise.resolve()
   appDetails: WindowsAppDetails[] = []
   overlay: { color: string; symbolColor: string; height: number }[] = []
+  backgrounds: string[] = []
   readonly webContents = {
     listeners: [] as Array<(event: unknown, channel: string, ...args: unknown[]) => void>,
     on: (_event: 'ipc-message', listener: (event: unknown, channel: string, ...args: unknown[]) => void): void => {
@@ -63,6 +65,7 @@ class FakeWindow implements BrowserWindowLike {
   reload(): void { this.calls.push('reload') }
   isVisible(): boolean { return this.visible }
   setTitle(title: string): void { this.title = title }
+  setBackgroundColor(color: string): void { this.backgrounds.push(color) }
   setAppDetails(options: WindowsAppDetails): void { this.appDetails.push(options) }
   setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void { this.overlay.push(options) }
   on(event: string, listener: (...args: never[]) => void): void { this.events.set(event, listener) }
@@ -107,7 +110,7 @@ function setup(lock = true, loading: Promise<void> = Promise.resolve()): {
     Menu: {
       buildFromTemplate(template) { state.menu = { items: [...template] }; return state.menu }
     },
-    nativeImage: { createFromPath: vi.fn(() => ({ icon: true })) },
+    nativeImage: { createFromPath: vi.fn(() => ({ setTemplateImage: vi.fn() })) },
     shell: { openPath: vi.fn(async () => '') },
   }
   return { api, app, bridge, windows, trays, get menu() { return state.menu } }
@@ -215,9 +218,10 @@ describe('Electron shell', () => {
     })
     expect(desktopIconPath('win32')).toMatch(/dsh-desktop\.ico$/)
     expect(desktopIconPath('linux')).toMatch(/dsh-desktop\.png$/)
+    expect(trayIconPath('darwin')).toMatch(/dsh-desktopTemplate\.png$/)
   })
 
-  it('keeps macOS native controls and ignores overlay theme messages', async () => {
+  it('keeps macOS native controls and updates native theme and icons', async () => {
     const setupResult = setup()
     const pending = runElectronShell(setupResult.api, setupResult.bridge, 'darwin')
     setupResult.bridge.emit(init)
@@ -226,6 +230,14 @@ describe('Electron shell', () => {
     expect(setupResult.windows[0].appDetails).toEqual([])
     setupResult.windows[0].webContents.emit('dsh-desktop-theme', '#ffffff')
     expect(setupResult.windows[0].overlay).toEqual([])
+    expect(setupResult.windows[0].backgrounds).toEqual(['#ffffff'])
+    expect(setupResult.app.dock.setIcon).toHaveBeenCalledOnce()
+    expect(setupResult.api.nativeImage.createFromPath).toHaveBeenNthCalledWith(2, expect.stringMatching(/dsh-desktopTemplate\.png$/))
+    const trayIcon = (setupResult.api.nativeImage.createFromPath as ReturnType<typeof vi.fn>).mock.results[1]?.value as { setTemplateImage: ReturnType<typeof vi.fn> }
+    expect(trayIcon.setTemplateImage).toHaveBeenCalledWith(true)
+    setupResult.windows[0].hide()
+    setupResult.app.emit('activate')
+    expect(setupResult.windows[0].visible).toBe(true)
   })
 
   it('retains locale updates received before the Tray is ready', async () => {

@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 /** Canonical launch command stored in user-level shortcuts. */
@@ -9,6 +9,7 @@ export interface LaunchCommand {
   executable: string
   args: readonly string[]
   cwd: string
+  environment?: Readonly<Record<string, string>>
 }
 
 /** Existing-instance probe used by console-free Windows launchers. */
@@ -25,6 +26,7 @@ export interface ShortcutDependencies {
   command: LaunchCommand
   windowsActivation?: WindowsActivation
   runWindowsShortcut?: (path: string, command: LaunchCommand, activation: WindowsActivation) => Promise<void>
+  runMacShortcut?: (path: string, command: LaunchCommand) => Promise<void>
 }
 
 /** All files owned by this plugin, including the ownership marker suffix. */
@@ -53,8 +55,8 @@ export function shortcutPaths(platform: NodeJS.Platform, home: string = homedir(
   }
   if (platform === 'darwin') {
     return {
-      desktop: join(home, 'Desktop', `${PRODUCT}.command`),
-      appMenu: join(home, 'Applications', `${PRODUCT}.command`),
+      desktop: join(home, 'Desktop', `${PRODUCT}.app`),
+      appMenu: join(home, 'Applications', `${PRODUCT}.app`),
       login: join(home, 'Library', 'LaunchAgents', 'com.anestis271.dsh-desktop.plist'),
     }
   }
@@ -67,6 +69,24 @@ export function shortcutPaths(platform: NodeJS.Platform, home: string = homedir(
 
 function quoteExec(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+}
+
+/** Quote one argument for a POSIX shell without permitting expansion. */
+export function quoteShellArgument(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+function xmlText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function appleScriptString(value: string): string {
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n')}"`
+}
+
+function posixCommand(command: LaunchCommand): string[] {
+  const environment = Object.entries(command.environment ?? {}).map(([key, value]) => `${key}=${value}`)
+  return ['/usr/bin/env', ...environment, command.executable, ...command.args]
 }
 
 function quoteWindowsArgument(value: string): string {
@@ -133,16 +153,26 @@ export async function taskbarRelaunchCommand(
 
 /** Serialize a launch command using freedesktop Exec quoting. */
 export function desktopEntry(command: LaunchCommand): string {
-  const args = [command.executable, ...command.args].map(quoteExec).join(' ')
+  const args = posixCommand(command).map(quoteExec).join(' ')
   return `[Desktop Entry]\nType=Application\nName=${PRODUCT}\nExec=${args}\nPath=${quoteExec(command.cwd)}\nTerminal=false\nX-dsh-owner=${MARKER}\n`
 }
 
 /** Serialize a macOS user-level launch agent. */
 export function launchAgent(command: LaunchCommand): string {
   const values = [command.executable, ...command.args]
-    .map(value => `<string>${value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</string>`)
+    .map(value => `<string>${xmlText(value)}</string>`)
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>com.anestis271.dsh-desktop</string><key>ProgramArguments</key><array>${values}</array><key>WorkingDirectory</key><string>${command.cwd}</string><key>X-dsh-owner</key><string>${MARKER}</string><key>RunAtLoad</key><true/></dict></plist>\n`
+  const environment = Object.entries(command.environment ?? {})
+    .map(([key, value]) => `<key>${xmlText(key)}</key><string>${xmlText(value)}</string>`)
+    .join('')
+  const environmentBlock = environment === '' ? '' : `<key>EnvironmentVariables</key><dict>${environment}</dict>`
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>com.anestis271.dsh-desktop</string><key>ProgramArguments</key><array>${values}</array><key>WorkingDirectory</key><string>${xmlText(command.cwd)}</string>${environmentBlock}<key>X-dsh-owner</key><string>${MARKER}</string><key>RunAtLoad</key><true/></dict></plist>\n`
+}
+
+/** Compile a local AppleScript app that launches dsh without opening Terminal. */
+export function macShortcutAppleScript(command: LaunchCommand): string {
+  const shell = `cd ${quoteShellArgument(command.cwd)} && /usr/bin/nohup ${posixCommand(command).map(quoteShellArgument).join(' ')} >/dev/null 2>&1 &`
+  return `on run\n  do shell script ${appleScriptString(shell)}\nend run`
 }
 
 function markerPath(path: string): string {
@@ -153,17 +183,33 @@ async function ensureParent(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
 }
 
-async function writeOwned(path: string, content: string): Promise<void> {
+async function writeOwned(path: string, content: string, mode: number): Promise<void> {
   await ensureParent(path)
-  await writeFile(path, content, { mode: 0o755 })
+  await writeFile(path, content, { mode })
+  await chmod(path, mode)
   await writeFile(markerPath(path), MARKER, { mode: 0o600 })
+}
+
+async function ensureOwnedOrAbsent(path: string): Promise<void> {
+  try {
+    await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  try {
+    if (await readFile(markerPath(path), 'utf8') === MARKER) return
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  throw new Error(`dsh-desktop: refusing to overwrite an unowned shortcut: ${path}`)
 }
 
 async function removeOwned(path: string): Promise<void> {
   try {
     const marker = await readFile(markerPath(path), 'utf8')
     if (marker === MARKER) {
-      await rm(path, { force: true })
+      await rm(path, { recursive: true, force: true })
       await rm(markerPath(path), { force: true })
     }
   } catch (error) {
@@ -206,6 +252,31 @@ export async function createWindowsShortcut(
   })
 }
 
+/** Create a user-level macOS app wrapper through the system AppleScript compiler. */
+export async function createMacShortcut(path: string, command: LaunchCommand): Promise<void> {
+  await ensureParent(path)
+  const stagingDirectory = await mkdtemp(join(dirname(path), '.dsh-desktop-'))
+  const stagedPath = join(stagingDirectory, basename(path))
+  try {
+    const child = spawn('/usr/bin/osacompile', ['-o', stagedPath, '-e', macShortcutAppleScript(command)], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    await new Promise<void>((resolve, reject) => {
+      let stderr = ''
+      child.stderr?.on('data', chunk => { stderr += String(chunk) })
+      child.once('error', reject)
+      child.once('exit', code => {
+        if (code === 0) resolve()
+        else reject(new Error(`dsh-desktop: macOS shortcut creation failed${stderr === '' ? '' : `: ${stderr.trim()}`}`))
+      })
+    })
+    await rm(path, { recursive: true, force: true })
+    await rename(stagedPath, path)
+  } finally {
+    await rm(stagingDirectory, { recursive: true, force: true })
+  }
+}
+
 /** Create or remove one plugin-owned user-level entry. */
 export async function reconcileShortcut(key: ShortcutKey, enabled: boolean, deps: ShortcutDependencies): Promise<void> {
   const paths = shortcutPaths(deps.platform, deps.home)
@@ -214,6 +285,7 @@ export async function reconcileShortcut(key: ShortcutKey, enabled: boolean, deps
     await removeOwned(path)
     return
   }
+  await ensureOwnedOrAbsent(path)
   if (deps.platform === 'win32') {
     if (deps.windowsActivation === undefined) {
       throw new Error('dsh-desktop: Windows shortcut activation metadata is unavailable')
@@ -222,11 +294,12 @@ export async function reconcileShortcut(key: ShortcutKey, enabled: boolean, deps
     await (deps.runWindowsShortcut ?? createWindowsShortcut)(path, deps.command, deps.windowsActivation)
     await writeFile(markerPath(path), MARKER, { mode: 0o600 })
   } else if (deps.platform === 'darwin' && key === 'login') {
-    await writeOwned(path, launchAgent(deps.command))
+    await writeOwned(path, launchAgent(deps.command), 0o600)
   } else if (deps.platform === 'darwin') {
-    await writeOwned(path, `#!/bin/sh\nexec ${[deps.command.executable, ...deps.command.args].map(quoteExec).join(' ')}\n# ${MARKER}\n`)
+    await (deps.runMacShortcut ?? createMacShortcut)(path, deps.command)
+    await writeFile(markerPath(path), MARKER, { mode: 0o600 })
   } else {
-    await writeOwned(path, desktopEntry(deps.command))
+    await writeOwned(path, desktopEntry(deps.command), 0o755)
   }
 }
 
